@@ -38,7 +38,20 @@ STATE_DIR = cfg.USER_CONFIG_DIR
 ALIAS_FILE = STATE_DIR / "aliases.json"
 WORK_DIR = STATE_DIR / "work"
 
-mcp = _Server("revit-wy")
+# instructions 会作为服务说明推给客户端，AI 靠它决定"先调哪个工具"。
+# 没有它时模型容易直接调 rwy_build，然后在"还没有 IR"上撞一次。
+mcp = _Server(
+    "revit-wy",
+    version=__version__,
+    instructions=(
+        "AutoCAD 图纸转 Revit 2022 构件的工具集。\n"
+        "推荐路径：① 先 rwy_dwg_to_model 一步跑完转换/体检/对照/清洗/建构件；"
+        "② 若返回 blockers（如「有 N 个图层未能自动归类」），把图层名和你的判断"
+        "用 rwy_confirm_mapping 确认后重试；③ rwy_build(dry_run=true) 看将建什么，"
+        "**必须让用户确认**；④ rwy_build(dry_run=false, confirm=true) 才真正写入。\n"
+        "硬约束：不要跳过干跑；模型里已有旧构件时，问用户要不要 replace_existing=true。"
+    ),
+)
 
 # 进程内会话状态：一次翻模过程的中间产物
 _S: Dict[str, Any] = {

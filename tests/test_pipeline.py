@@ -346,3 +346,102 @@ class TestEffort:
         assert rep["counts"]["walls"] == 30
         assert len(rep["drawings"]) == 2
         assert "cost_cny" in rep
+
+
+# ============================================================ 安装与诊断
+class TestInstallMcp:
+    """MCP 配置写入必须幂等且不破坏用户已有配置。"""
+
+    def _home(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        monkeypatch.setenv("HOME", str(tmp_path))
+        return tmp_path
+
+    def test_新增后不覆盖其它服务器(self, tmp_path, monkeypatch):
+        import json
+        from revit_wy import install_mcp as I
+        home = self._home(tmp_path, monkeypatch)
+        p = home / ".workbuddy" / "mcp.json"
+        p.parent.mkdir(parents=True)
+        p.write_text(json.dumps({"mcpServers": {"other": {"command": "x"}}}),
+                     encoding="utf-8")
+        row = I.merge_into(p, I.build_entry(Path.cwd()))
+        data = json.loads(p.read_text(encoding="utf-8"))
+        assert set(data["mcpServers"]) == {"other", "revit-wy"}
+        assert data["mcpServers"]["other"]["command"] == "x"
+        assert "新增" in row
+
+    def test_重复执行幂等(self, tmp_path, monkeypatch):
+        from revit_wy import install_mcp as I
+        home = self._home(tmp_path, monkeypatch)
+        p = home / ".workbuddy" / "mcp.json"
+        e = I.build_entry(Path.cwd())
+        I.merge_into(p, e)
+        first = p.read_text(encoding="utf-8")
+        assert "无需改动" in I.merge_into(p, e)
+        assert p.read_text(encoding="utf-8") == first
+
+    def test_坏文件先备份再重建(self, tmp_path, monkeypatch):
+        from revit_wy import install_mcp as I
+        home = self._home(tmp_path, monkeypatch)
+        p = home / ".workbuddy" / "mcp.json"
+        p.parent.mkdir(parents=True)
+        p.write_text("{broken", encoding="utf-8")
+        I.merge_into(p, I.build_entry(Path.cwd()))
+        assert (p.parent / "mcp.json.bak").exists()
+        assert "revit-wy" in p.read_text(encoding="utf-8")
+
+    def test_写入的路径真实存在(self, tmp_path, monkeypatch):
+        """配了但不生效的头号原因：command 指向不存在的 python。"""
+        import json
+        from revit_wy import install_mcp as I
+        self._home(tmp_path, monkeypatch)
+        p = tmp_path / "mcp.json"
+        I.merge_into(p, I.build_entry(Path.cwd()))
+        entry = json.loads(p.read_text(encoding="utf-8"))["mcpServers"]["revit-wy"]
+        assert Path(entry["command"]).exists()
+        assert Path(entry["env"]["PYTHONPATH"]).is_dir()
+
+
+class TestDiagnose:
+    """诊断报告要能如实回答「当前能用到哪一步」。"""
+
+    def test_无Revit时给出B级结论(self, arch_dxf, tmp_path):
+        from revit_wy.diagnose import run_all, verdict
+        secs = run_all(tmp_path, port=1, viewer_port=2)
+        head, todos = verdict(secs)
+        assert head.startswith(("A.", "B.", "C."))
+
+    def test_每条失败都带建议(self, arch_dxf, tmp_path):
+        from revit_wy.diagnose import run_all
+        secs = run_all(tmp_path, port=1, viewer_port=2)
+        for s in secs:
+            for it in s.items:
+                if it.level == "bad":
+                    assert it.fix, f"{it.title} 报错了却没给建议"
+
+    def test_控制台副本能GBK编码(self, arch_dxf, tmp_path):
+        from revit_wy.diagnose import console_safe, render, run_all
+        text = console_safe(render(run_all(tmp_path, port=1, viewer_port=2)))
+        text.encode("gbk")          # 不抛异常即通过（Windows 控制台用 GBK）
+
+    def test_报告含结论段(self, arch_dxf, tmp_path):
+        from revit_wy.diagnose import render, run_all
+        text = render(run_all(tmp_path, port=1, viewer_port=2))
+        assert "===== 结论 =====" in text
+        assert "统计：" in text
+
+
+class TestMockBackend:
+    def test_演示用假后端可起停(self):
+        from revit_wy.mock_backend import port_open, start_background
+        import socket
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        srv = start_background(port)
+        try:
+            assert port_open(port)
+        finally:
+            srv.shutdown()
+            srv.server_close()

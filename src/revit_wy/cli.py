@@ -1,6 +1,10 @@
 """revit-wy 命令行：把整条流水线拆成可单步调试的 6 个命令。
 
-    revit-wy doctor                         环境自检
+    revit-wy doctor                         环境自检（简版）
+    revit-wy diag                           环境诊断（完整报告，可发给支持人员）
+    revit-wy install-mcp                    写入 Cursor / WorkBuddy 的 MCP 配置（不破坏已有）
+    revit-wy mock                           起一个假 Revit（没有 Revit 也能试跑）
+    revit-wy demo                           一条命令演示全流程（自动起假 Revit）
     revit-wy dwg       a.dwg                 ★一键：DWG→构件台账（五阶段）
     revit-wy saving    a.ir.json             ★减负估算：省多少工时
     revit-wy dwg2dxf  <dir>                 批量 DWG→DXF（accoreconsole）
@@ -340,6 +344,114 @@ def cmd_saving(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ mock/demo
+def cmd_install_mcp(args) -> int:
+    from .install_mcp import install
+    rows = install(Path(".").resolve(), args.profile, args.python, args.force,
+                   args.cursor_global, not args.no_workbuddy)
+    for r in rows:
+        mark = "OK" if r["ok"] == "true" else "X"
+        print(_c("ok" if r["ok"] == "true" else "err",
+                 f"  [{mark}] {r['client']:<12} {r['action']}"))
+        print(_c("dim", f"        {r['path']}"))
+    print(_c("dim", "\n  WorkBuddy 需在「连接器」里点一次 Trust；"
+                    "Cursor 首次会询问是否启用该项目级 MCP。"))
+    return 0 if all(r["ok"] == "true" for r in rows) else 1
+
+
+def cmd_mock(args) -> int:
+    from .mock_backend import port_open, serve_forever
+    if port_open(args.port):
+        print(_c("err", f"端口 {args.port} 已被占用——可能真 Revit 插件已经在跑，"
+                        "或另一个 mock 没关"))
+        return 2
+    print(_c("h", f"\n  假 Revit 已启动：{args.host}:{args.port}"))
+    print(_c("dim", "  它只做协议级仿真：校验 IR、统计构件、按真实错误码回包。"))
+    print(_c("dim", "  现在可以另开窗口跑 revit-wy build x.dxf --send，或直接 revit-wy demo。"))
+    print(_c("dim", "  Ctrl+C 结束。\n"))
+    try:
+        serve_forever(args.port, args.host)
+    except KeyboardInterrupt:
+        print(_c("dim", "\n  已停止。"))
+    return 0
+
+
+def cmd_demo(args) -> int:
+    """一条命令把整条链路走一遍，包括写入（写进假 Revit）。"""
+    from .mock_backend import port_open, start_background
+
+    src = Path(args.path)
+    if not src.exists():
+        print(_c("err", f"找不到图纸：{src}"))
+        print(_c("dim", "  仓库自带样例：samples/arch_plan.dxf、samples/struct_plan.dxf、"
+                        "samples/messy_plan.dxf"))
+        return 2
+
+    srv = None
+    if port_open(args.port):
+        print(_c("warn", f"  端口 {args.port} 已有服务在监听，将直接用它"))
+        print(_c("dim", "  （如果那是真 Revit 插件，本次演示会真的写入你的模型；"
+                        "想写假模型就先关掉 Revit 插件）"))
+    else:
+        srv = start_background(args.port)
+        print(_c("ok", f"  [1/4] 假 Revit 已启动 {args.port}"))
+        print(_c("dim", "        没有 Revit 也能看到完整效果，只是不生成真实几何"))
+
+    try:
+        print(_c("h", f"\n  [2/4] 跑五阶段流水线：{src.name}"))
+        from .dwg_pipeline import run_dwg
+        out = Path(args.out) if args.out else Path(".demo")
+        r = run_dwg(src, args.profile, out)
+        if not r.ok:
+            print(_c("err", "  流水线中断："))
+            for b in r.blockers:
+                print(f"   ! {b}")
+            return 3
+        for st in r.stages:
+            print(f"   ✔ {st.name:<8}{st.seconds:>6.2f}s")
+        c = r.counts
+        print(_c("ok", f"  构件：墙 {c['walls']}｜柱 {c['columns']}｜梁 {c['beams']}"
+                       f"｜门 {c['doors']}｜窗 {c['windows']}｜板 {c['slabs']}"
+                       f"｜轴网 {c['grids']}｜标高 {c['levels']}"))
+
+        print(_c("h", "\n  [3/4] 干跑 → 写入（模拟）"))
+        from .bridge import RevitBridge
+        with RevitBridge("127.0.0.1", args.port) as b:
+            before = int(b.status().get("revit_wy_tagged", 0) or 0)
+            if before:
+                b.delete_tagged()
+                print(_c("dim", f"        先清理上次的 {before} 个构件"))
+            dry = b.build_ir(r.model.to_dict(), dry_run=True)
+            print(_c("dim", f"        干跑：{dry.get('created')}"))
+            res = b.build_ir(r.model.to_dict(), dry_run=False)
+        if not res.get("ok"):
+            print(_c("err", f"  写入失败：{res.get('errors')}"))
+            return 4
+        made = res.get("created", {})
+        print(_c("ok", f"  写入成功：{made}"))
+
+        sv = r.saving.get("seconds", {})
+        if sv:
+            print(_c("h", "\n  [4/4] 减负账"))
+            print(f"   手工约 {sv['manual']/3600:.2f}h → 净省 {sv['net_saving']/3600:.2f}h"
+                  f"（{r.saving['saving_pct']}%，见 revit-wy saving）")
+            if r.saving.get("saving_pct", 0) <= 0:
+                print(_c("dim", "   样例图只有十几个构件，规则调校是一次性成本，"
+                                "所以单张小图为负是正常的；真实标准层见 docs/07"))
+
+        print(_c("h", "\n  下一步你可以："))
+        print(f"     · 看可视化：revit-wy panel {src}  → http://127.0.0.1:8770/")
+        print(f"     · 看确认单：{r.review.get('markdown', '')}")
+        print(f"     · 装好 Revit 2022 后，把 {src.name} 用 --send 真正写进去")
+        print(_c("dim", "\n  注意：本次写入的是假 Revit（内存里的构件计数），"
+                        "真实建模效果要在 Revit 里看。"))
+        return 0
+    finally:
+        if srv is not None:
+            srv.shutdown()
+            print(_c("dim", "\n  假 Revit 已关闭。"))
+
+
 def cmd_status(args) -> int:
     _print(probe(args.host, args.port))
     return 0
@@ -427,6 +539,36 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--host", default="0.0.0.0")
     pv.add_argument("--port", type=int, default=8770)
     pv.set_defaults(func=cmd_panel)
+
+    im = sub.add_parser("install-mcp", help="写入 MCP 客户端配置（合并，不覆盖）")
+    im.add_argument("-p", "--profile", default="arch", choices=["arch", "struct", "mep"])
+    im.add_argument("--python", default="", help="客户端要用的 python 绝对路径")
+    im.add_argument("--force", action="store_true")
+    im.add_argument("--cursor-global", action="store_true")
+    im.add_argument("--no-workbuddy", action="store_true")
+    im.set_defaults(func=cmd_install_mcp)
+
+    mk = sub.add_parser("mock", help="起一个假 Revit（没有 Revit 也能试跑链路）")
+    mk.add_argument("--port", type=int, default=48880)
+    mk.add_argument("--host", default="127.0.0.1")
+    mk.set_defaults(func=cmd_mock)
+
+    dm = sub.add_parser("demo", help="一条命令演示全流程（自动起假 Revit）")
+    dm.add_argument("path", nargs="?", default="samples/arch_plan.dxf")
+    dm.add_argument("-p", "--profile", default="arch", choices=["arch", "struct", "mep"])
+    dm.add_argument("--out", default="")
+    dm.add_argument("--port", type=int, default=48880)
+    dm.set_defaults(func=cmd_demo)
+
+    dg = sub.add_parser("diag", help="环境诊断，生成可发送的报告")
+    dg.add_argument("--root", default=".", help="仓库根目录")
+    dg.add_argument("--out", default="")
+    dg.add_argument("--port", type=int, default=48880)
+    dg.add_argument("--viewer-port", type=int, default=8770)
+    dg.set_defaults(func=lambda a: __import__(
+        "revit_wy.diagnose", fromlist=["main"]).main(
+        ["--root", a.root, "--out", a.out, "--port", str(a.port),
+         "--viewer-port", str(a.viewer_port)]))
 
     st = sub.add_parser("status", help="Revit 插件状态")
     st.add_argument("--host", default="127.0.0.1")

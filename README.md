@@ -29,7 +29,16 @@ DWG/DXF ──► 清洗分层 ──► 图层→构件映射 ──► 数模�
 | 文件 | 作用 |
 |---|---|
 | **`一键启动.bat`** | 装环境 → 编译插件 → 配 MCP → 自检 → 开工作台（首次约 3 分钟） |
-| **`一键诊断.bat`** | 出问题双击它，生成 `诊断报告_*.txt` 发给维护者 |
+| **`一键诊断.bat`** | 出问题双击它，生成 `诊断报告_*.txt` 发给维护者（含"你现在能用到哪一步"） |
+
+**没有 Revit 也能试：**
+
+```powershell
+revit-wy demo        # 自动起一个假 Revit，走完全流程，看构件清单/减负账长什么样
+```
+
+本项目的清洗、对照、构件清单、差异、可视化、导出都不需要 Revit。
+只有"真正把几何建进模型"这一步需要 Revit 2022。
 
 ### 命令行
 
@@ -104,6 +113,9 @@ revit-wy/
 │   ├── bridge.py                  TCP NDJSON 客户端
 │   ├── autocad.py                 accoreconsole / ODA 批量转 DXF
 │   ├── dwg_pipeline.py            ★DWG 优先五阶段流水线（阶段台账 + 失败可解释）
+│   ├── diagnose.py                ★环境诊断（结论式报告，可发给支持人员）
+│   ├── install_mcp.py             ★MCP 配置写入（合并，不覆盖已有）
+│   ├── mock_backend.py            假 Revit 后端（无 Revit 也能全链路试跑）
 │   ├── effort.py                  ★减负量化（工时基准可改）
 │   ├── diffing.py                 几何签名差异 + 整体平移自动对齐
 │   ├── mcp_server.py              MCP 服务（14 个工具）
@@ -124,7 +136,7 @@ revit-wy/
 │   ├── mcp_bench/                 ★DeepSeek×MCP 能力边界基准 + HTML 报告
 │   └── viewer/                    数模对照可视化预览（Canvas，零依赖）
 ├── reports/                       能力边界可视化报告（HTML，可直接给领导看）
-├── tests/                         69 个测试
+├── tests/                         78 个测试
 ├── samples/                       自动生成的样例图纸
 └── docs/                          方案与开发文档
 ```
