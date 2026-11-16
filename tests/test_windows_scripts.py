@@ -103,6 +103,67 @@ class TestPowerShellEncoding:
         assert raw.startswith(b"\xef\xbb\xbf"), f"{name} 缺 UTF-8 BOM"
 
 
+class TestNet48Build:
+    """MSB3644 的根因是缺 .NET Framework 4.8 引用程序集。
+
+    这条链上任何一环退回去，用户都会重新掉进同一个坑：
+      工程没有 WorkloadResolver 开关 → SDK 回去解析工作负载 → MSB3644
+      PowerShell 不做前置探测 → 用户只看到英文错误码
+    """
+
+    def _csproj(self) -> str:
+        return (ROOT / "addin/RevitWy.Plugin/RevitWy.Plugin.csproj").read_text(encoding="utf-8")
+
+    def test_关闭工作负载解析(self):
+        assert "<MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>" in self._csproj()
+
+    def test_编译前检查v48引用程序集(self):
+        text = self._csproj()
+        assert "CheckNet48ReferenceAssemblies" in text
+        assert "BeforeTargets=\"ResolveAssemblyReferences\"" in text
+        assert "mscorlib.dll" in text
+
+    def test_net48用12版Newtonsoft避免运行时崩(self):
+        """引用 13.x 会报 Could not load Newtonsoft.Json, Version=13.0.0.0。"""
+        text = self._csproj()
+        assert 'Version="12.0.3"' in text
+        assert "TargetFramework)' == 'net48'" in text
+
+    def test_有绑定重定向文件(self):
+        cfg = ROOT / "addin/RevitWy.Plugin/app.net48.config"
+        assert cfg.exists()
+        text = cfg.read_text(encoding="utf-8")
+        assert "Newtonsoft.Json" in text
+        assert 'newVersion="12.0.0.0"' in text
+
+    def test_绑定重定向会被部署(self):
+        assert "RevitWy.Plugin.dll.config" in (ROOT / "scripts/build-addin.ps1").read_text(
+            encoding="utf-8-sig")
+
+    def test_ps1会提前探测引用程序集(self):
+        text = (ROOT / "scripts/build-addin.ps1").read_text(encoding="utf-8-sig")
+        assert "MSB3644" in text
+        assert "Reference Assemblies" in text
+        assert "Developer Pack" in text
+
+    def test_一键启动先试Nuget再回退(self):
+        text = _bat("一键启动.bat").decode("ascii")
+        nuget = text.index("-UseNuget")
+        fallback = text.index("Retrying with the local Revit API DLLs")
+        assert nuget < fallback, "应当先试不需要 Framework 开发包的 NuGet 路径"
+
+    def test_所有xml注释里没有连续双减号(self):
+        """XML 注释里出现 -- 会让 MSBuild/expat 直接判 not well-formed。"""
+        import re
+        for f in ["addin/RevitWy.Plugin/RevitWy.Plugin.csproj",
+                  "addin/RevitWy.Plugin/app.net48.config",
+                  "addin/RevitWy.Plugin/RevitWy.Plugin.addin"]:
+            text = (ROOT / f).read_text(encoding="utf-8")
+            for m in re.finditer(r"<!--(.*?)-->", text, re.S):
+                body = m.group(1)
+                assert "--" not in body, f"{f} 注释里有连续双减号"
+
+
 class TestSetupCheck:
     """自检模块自己也要被自检：它能跑、能给出结论、不误报。"""
 
@@ -118,7 +179,7 @@ class TestSetupCheck:
 
     def test_必检项都在(self, report):
         keys = {c.key for c in report.checks}
-        for must in ("python", "venv", "deps", "config", "viewer", "bat"):
+        for must in ("python", "venv", "deps", "config", "viewer", "bat", "net48"):
             assert must in keys, must
 
     def test_每项失败都有可执行的下一步(self, report):

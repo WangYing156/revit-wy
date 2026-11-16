@@ -16,7 +16,9 @@
   也可显式指定，例如 -RevitVersions 2022,2024,2025
 
 .PARAMETER UseNuget
-  用 NuGet 的 Revit API 包编译，不需要装 Revit（CI 用）。
+  用 NuGet 的 Revit API 包编译。**不需要装 .NET Framework 开发包，也不需要装 Revit**，
+  是最省事的路径（尤其是只装了 .NET 8/9/10 SDK 的新机器）。
+  net48 目标下还会自动生成 app.config 绑定重定向，避免 Newtonsoft 版本冲突。
 
 .EXAMPLE
   .\scripts\build-addin.ps1                      # 编译本机装了的全部版本
@@ -56,6 +58,23 @@ foreach ($line in $sdkList) {
     if ($line -match '^(\d+)\.') { if ([int]$Matches[1] -gt $sdkMajor) { $sdkMajor = [int]$Matches[1] } }
 }
 Write-Host "SDK 最高主版本: $sdkMajor" -ForegroundColor DarkGray
+
+# --- 1b. net48 引用程序集（MSB3644 的根因）---
+# 只要编 2022–2024 就需要它。但走 -UseNuget 时也仍然需要（net48 是目标框架），
+# 所以把它单独探一次，提前告诉用户该走哪条路，而不是等 MSBuild 抛英文错误码。
+$fwRefDir = $null
+$candidates = @(
+    "$env:ProgramFiles(x86)\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8",
+    "$env:ProgramFiles\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8"
+)
+foreach ($c in $candidates) {
+    if ($c -and (Test-Path (Join-Path $c "mscorlib.dll"))) { $fwRefDir = $c; break }
+}
+if ($fwRefDir) {
+    Write-Host "net48 引用程序集: $fwRefDir" -ForegroundColor DarkGray
+} else {
+    Write-Host "未找到 .NET Framework 4.8 引用程序集（编 Revit 2022-2024 需要）" -ForegroundColor Yellow
+}
 
 # --- 2. 决定要编译哪些版本 ---
 function Get-InstalledRevitVersions {
@@ -106,6 +125,17 @@ foreach ($v in $RevitVersions) {
         continue
     }
 
+    if ($tf -eq "net48" -and -not $fwRefDir) {
+        Write-Host "  跳过：缺 .NET Framework 4.8 引用程序集（MSB3644）" -ForegroundColor Red
+        Write-Host "    三选一，任选其一即可：" -ForegroundColor Yellow
+        Write-Host "      1) 装 .NET Framework 4.8 Developer Pack（体积小，只补引用程序集）" -ForegroundColor Yellow
+        Write-Host "         https://dotnet.microsoft.com/download/dotnet-framework/net48" -ForegroundColor Yellow
+        Write-Host "      2) 装 Visual Studio Build Tools，勾选 \".NET Framework 4.8 targeting pack\"" -ForegroundColor Yellow
+        Write-Host "      3) 只编新版 Revit：.\scripts\build-addin.ps1 -RevitVersions 2025 -Deploy" -ForegroundColor Yellow
+        $results += [pscustomobject]@{ Version = $v; TF = $tf; Ok = $false; Reason = "缺 net48 引用程序集" }
+        continue
+    }
+
     $apiDir = $RevitApiDir
     if (-not $UseNuget -and -not $apiDir) { $apiDir = "C:\Program Files\Autodesk\Revit $v" }
 
@@ -151,7 +181,7 @@ if ($Deploy) {
         $deployDir = Join-Path $addinDir "revit-wy"
         New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
         Copy-Item $dll $deployDir -Force
-        foreach ($extra in @("Newtonsoft.Json.dll", "config.json")) {
+        foreach ($extra in @("Newtonsoft.Json.dll", "config.json", "RevitWy.Plugin.dll.config")) {
             $src = Join-Path $out $extra
             if (-not (Test-Path $src)) { $src = Join-Path (Split-Path $proj) $extra }
             if (Test-Path $src) { Copy-Item $src $deployDir -Force }

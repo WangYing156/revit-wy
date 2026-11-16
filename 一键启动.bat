@@ -136,8 +136,18 @@ where dotnet >nul 2>&1
 if errorlevel 1 goto :no_dotnet
 
 echo       Compiling Revit add-in (1-2 minutes per installed version)...
+REM Try the NuGet route first: it does not need the .NET Framework 4.8
+REM Developer Pack, which is the #1 reason the build fails on a fresh machine
+REM (error MSB3644: reference assemblies for .NETFramework,Version=v4.8 not found).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-addin.ps1" -UseNuget -Deploy
+if not errorlevel 1 goto :addin_compiled
+echo.
+echo       NuGet route failed. Retrying with the local Revit API DLLs...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-addin.ps1" -Deploy
-if errorlevel 1 goto :addin_fail
+if not errorlevel 1 goto :addin_compiled
+goto :addin_fail
+
+:addin_compiled
 echo [3/6] Add-in compiled and deployed
 goto :addin_done
 
@@ -154,7 +164,16 @@ goto :addin_done
 
 :addin_fail
 echo [3/6] Add-in build failed - other features unaffected
-echo       Run scripts\build-addin.ps1 in PowerShell to see the full error
+echo.
+echo   The usual cause is a missing .NET Framework 4.8 reference assemblies
+echo   pack (error MSB3644). Pick ONE of these:
+echo     1) Install .NET Framework 4.8 Developer Pack (small, ~70 MB)
+echo        https://dotnet.microsoft.com/download/dotnet-framework/net48
+echo     2) Install Visual Studio Build Tools with ".NET Framework 4.8
+echo        targeting pack" checked
+echo     3) Skip Revit 2022-2024 and build for 2025+ only:
+echo        powershell -File scripts\build-addin.ps1 -RevitVersions 2025 -UseNuget -Deploy
+echo   Everything except "write into Revit" keeps working either way.
 goto :addin_done
 
 :selfcheck_bad

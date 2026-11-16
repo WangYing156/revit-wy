@@ -209,6 +209,34 @@ def check_ports(rep: SetupReport) -> None:
                 "没有页签就先跑 scripts\\build-addin.ps1 -Deploy")
 
 
+def check_net48_targeting_pack(rep: SetupReport, root: Path) -> None:
+    """编译 Revit 2022–2024 插件需要 .NET Framework 4.8 的引用程序集。
+
+    MSB3644 几乎全是这个原因：机器上只有 dotnet SDK 10，没有装 .NET Framework
+    的开发包（Developer Pack / VS Build Tools 的 targeting pack）。
+    这里提前判定，并给出最小代价的三条路——比等 MSBuild 抛英文错误好得多。
+    """
+    if os.name != "nt":
+        # 非 Windows 上不判；但要留一条记录，免得报告里少一项让人困惑。
+        rep.add("net48", ".NET Framework 4.8 引用程序集", "ok", "非 Windows，跳过")
+        return
+    root_dirs = [
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        / "Reference Assemblies/Microsoft/Framework/.NETFramework/v4.8",
+    ]
+    for d in root_dirs:
+        if (d / "mscorlib.dll").exists():
+            rep.add("net48", ".NET Framework 4.8 引用程序集", "ok", str(d))
+            return
+    rep.add("net48", ".NET Framework 4.8 引用程序集", "warn", "未找到（编译 Revit 2022–2024 插件会报 MSB3644）",
+            "三选一：① 装 .NET Framework 4.8 Developer Pack（约 70 MB，最快）；"
+            "② 装 VS Build Tools 并勾选 \".NET Framework 4.8 targeting pack\"；"
+            "③ 只编 Revit 2025+（-RevitVersions 2025）。"
+            "注意：翻模/体检/报告等全部功能都不受影响，只影响把插件编进 Revit 2022–2024")
+
+
 def check_addin(rep: SetupReport, root: Path) -> None:
     """插件是三件事里最容易静默失败的（装错框架 = Revit 直接跳过，不报错）。"""
     appdata = Path(os.environ.get("APPDATA", "")) if os.name == "nt" else Path.home()
@@ -359,6 +387,7 @@ def run(root: str | Path = ".") -> SetupReport:
     check_deps(rep, r)
     check_resources(rep, r)
     check_scripts(rep, r)
+    check_net48_targeting_pack(rep, r)
     check_ports(rep)
     check_addin(rep, r)
     check_viewer_serves(rep, r)
