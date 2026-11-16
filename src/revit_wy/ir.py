@@ -223,6 +223,17 @@ class IRModel:
         return p
 
 
+def _target_revit(rules: Dict[str, Any]) -> str:
+    """目标 Revit 版本。
+
+    IR 是版本中立的（单位、几何、字段都不依赖 Revit 年份），所以这里不硬编码
+    某一年。`auto` 表示"以插件实际连接的版本为准"，报告里显示 auto 比显示一个
+    可能过期的 "2022" 更诚实。也可以显式配置成 "2024" 用于对账。
+    """
+    v = str((rules or {}).get("target_revit_version") or "auto").strip()
+    return v or "auto"
+
+
 # ------------------------------------------------------------------ 构建
 def _level_for(elev: float, levels: List[Level], tol: float = 50.0) -> str:
     if not levels:
@@ -257,7 +268,7 @@ def build(
 ) -> IRModel:
     """从按 component 分组的图元构建 IR。"""
     model = IRModel(source=source, profile=profile,
-                    revit_version=rules.get("target_revit_version", "2022"))
+                    revit_version=_target_revit(rules))
     wall_cfg = rules.get("wall", {})
     col_cfg = rules.get("column", {})
     beam_cfg = rules.get("beam", {})

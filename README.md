@@ -1,6 +1,6 @@
-# revit-wy ｜ AutoCAD → Revit 2022 一键翻模
+# revit-wy ｜ AutoCAD → Revit 2022+ 一键翻模
 
-把 DWG 施工图转成 Revit 构件：**图纸清洗 → 图层映射（数模对照确认）→ 规则建模 → 构件全自动生成**，
+把 DWG 施工图转成 Revit 构件（**支持 Revit 2022 及以上**：2022–2024 走 .NET 4.8，2025+ 走 .NET 8）：**图纸清洗 → 图层映射（数模对照确认）→ 规则建模 → 构件全自动生成**，
 通过 MCP 接入 **Cursor / WorkBuddy**，也能纯命令行跑完。
 
 > 一期范围：建筑平面 + 结构施工图，**只建模不出图**。机电仅做图层识别隔离，为二期预留。
@@ -38,7 +38,7 @@ revit-wy demo        # 自动起一个假 Revit，走完全流程，看构件清
 ```
 
 本项目的清洗、对照、构件清单、差异、可视化、导出都不需要 Revit。
-只有"真正把几何建进模型"这一步需要 Revit 2022。
+只有"真正把几何建进模型"这一步需要 Revit。
 
 ### 命令行
 
@@ -52,7 +52,7 @@ revit-wy saving 图纸\F1\F1.ir.json --md 减负报告.md
 # 分步（排错用）
 .\scripts\install.ps1
 
-# 2) 重启 Revit 2022 → 功能区出现 "revit-wy" → 点「连接状态」
+# 2) 重启 Revit（2022+）→ 功能区出现 "revit-wy" → 点「连接状态」
 #    显示 "运行中 / 127.0.0.1:48880"
 
 # 3) 自检
@@ -120,7 +120,7 @@ revit-wy/
 │   ├── diffing.py                 几何签名差异 + 整体平移自动对齐
 │   ├── mcp_server.py              MCP 服务（14 个工具）
 │   └── cli.py                     命令行（11 个子命令）
-├── addin/RevitWy.Plugin/          Revit 2022 C# 插件（net48）
+├── addin/RevitWy.Plugin/          Revit 2022+ C# 插件（net48 / net8 双线，Compat.cs 收敛版本差异）
 │   ├── UI/                         停靠面板（WPF）+ 后端适配层
 │   ├── Core/                       TCP 服务 + ExternalEvent 桥
 │   ├── Model/                      IR 模型 + 类型三级兜底
@@ -174,13 +174,14 @@ revit-wy panel samples\arch_plan.dxf     # → http://127.0.0.1:8770/
 |---|---|
 | [docs/01-方案总览.md](docs/01-方案总览.md) | **推荐方案 / 模块拆解 / 约束与风险 / 执行步骤**（主文档） |
 | [docs/02-图层映射与数模对照.md](docs/02-图层映射与数模对照.md) | 映射引擎原理、8 类语义、确认流程 |
-| [docs/03-Revit-2022-插件开发说明.md](docs/03-Revit-2022-插件开发说明.md) | 线程模型、事务策略、Revit 2022 专有坑 |
+| [docs/03-Revit-2022-插件开发说明.md](docs/03-Revit-2022-插件开发说明.md) | 线程模型、事务策略、Revit API 坑 |
 | [docs/04-MCP-接入指南.md](docs/04-MCP-接入指南.md) | Cursor / WorkBuddy 配置、对话脚本 |
 | [docs/05-踩坑与排错.md](docs/05-踩坑与排错.md) | 错误码、排错决策树、已修问题清单 |
 | [docs/06-可视化界面选型与实现.md](docs/06-可视化界面选型与实现.md) | 四种载体对比、WebView2 为何不用、面板实现 |
 | **[docs/07-使用说明与能力清单.md](docs/07-使用说明与能力清单.md)** | **怎么用、能做什么、做不到什么、什么时候会停下来问你** |
 | **[docs/08-DeepSeek能力边界结论.md](docs/08-DeepSeek能力边界结论.md)** | **DeepSeek 走 MCP 能操作到什么程度（含可视化报告）** |
 | [docs/09-补充建议与未考虑到的点.md](docs/09-补充建议与未考虑到的点.md) | 落地一年会踩的坑、值得优先做的三件事 |
+| **[docs/10-多版本支持与兼容层.md](docs/10-多版本支持与兼容层.md)** | **支持 2022 以上的做法：多目标编译、Compat 层、按版本部署** |
 
 ---
 
@@ -202,13 +203,18 @@ from pathlib import Path; d=Path('samples'); d.mkdir(exist_ok=True); \
 make_arch(d/'arch_plan.dxf'); make_struct(d/'struct_plan.dxf'); make_messy(d/'messy_plan.dxf')"
 ```
 
-C# 插件需在 Windows 上编译：
+C# 插件需在 Windows 上编译（支持 Revit 2022 及以上）：
 
 ```powershell
-.\scripts\build-addin.ps1              # 用本机 Revit 2022 API
-.\scripts\build-addin.ps1 -UseNuget    # 无 Revit 机器（CI）
-.\scripts\build-addin.ps1 -Deploy      # 编译并部署到 %APPDATA%
+.\scripts\build-addin.ps1                       # 编译本机装了的全部版本
+.\scripts\build-addin.ps1 -Deploy               # 并按版本部署到 %APPDATA%
+.\scripts\build-addin.ps1 -RevitVersions 2024 -Deploy
+.\scripts\build-addin.ps1 -UseNuget -RevitVersions 2022,2025   # 无 Revit 也能编（CI）
 ```
+
+版本与运行时：2022–2024 → `net48`；2025–2026 → `net8.0-windows`；2027+ → `net10.0-windows`。
+**编错运行时的表现是 Revit 静默跳过插件、连报错都没有**，所以每个版本独立输出目录、独立部署。
+详见 [docs/10](docs/10-多版本支持与兼容层.md)。
 
 ---
 
@@ -221,6 +227,7 @@ C# 插件需在 Windows 上编译：
 | 钢筋、机电建模 | 二期；机电目前只识别隔离 |
 | 出图（视图/标注/明细表） | 一期只建模 |
 | 单张图多楼层自动分层 | 需图框解析，二期 |
+| Revit 2021 及更早 | 只支持 2022+；更早版本 API 差异大，不做兼容 |
 | 专业间碰撞检查 | 各专业分别翻模，需自己在 Revit/Navisworks 里查 |
 | 净高分析、能耗、算量 | 不在一期范围 |
 

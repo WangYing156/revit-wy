@@ -136,6 +136,30 @@ class TestDrawing:
 
 
 # ------------------------------------------------------------ IR
+class TestRevitVersionSupport:
+    """项目要支持 Revit 2022 及以上，不是只支持 2022。"""
+
+    def test_版本到运行时的映射(self):
+        from revit_wy.diagnose import dotnet_framework_for
+        assert dotnet_framework_for("2022") == "net48"
+        assert dotnet_framework_for("2023") == "net48"
+        assert dotnet_framework_for("2024") == "net48"
+        assert dotnet_framework_for("2025") == "net8.0-windows"
+        assert dotnet_framework_for("2026") == "net8.0-windows"
+        assert dotnet_framework_for("2027") == "net10.0-windows"
+
+    def test_版本扫描覆盖2022以上(self):
+        from revit_wy.diagnose import REVIT_VERSIONS, SUPPORTED_MIN
+        assert SUPPORTED_MIN == 2022
+        assert "2022" in REVIT_VERSIONS and "2025" in REVIT_VERSIONS
+
+    def test_目标版本可配置(self):
+        from revit_wy.ir import _target_revit
+        assert _target_revit({}) == "auto"
+        assert _target_revit({"target_revit_version": "2025"}) == "2025"
+        assert _target_revit({"target_revit_version": None}) == "auto"
+
+
 class TestIR:
     def _build(self, path, profile="arch"):
         m = LayerMapper(cfg.load_mapping(profile))
@@ -172,7 +196,8 @@ class TestIR:
         p = model.save(tmp_path / "ir.json")
         data = json.loads(p.read_text(encoding="utf-8"))
         assert data["schema"] == "1.0"
-        assert data["revit_version"] == "2022"
+        # 目标版本是配置项：默认 auto（跟插件实际连接的版本走），可显式配成某一年
+        assert data["revit_version"] in ("auto", "2022")
         assert len(data["walls"]) == len(model.walls)
 
     def test_rules_override(self, arch_dxf):
@@ -445,3 +470,54 @@ class TestMockBackend:
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+class TestAddinPackaging:
+    """插件打包层面的回归：运行时错配与 XML 语法错都会让 Revit 静默跳过插件，
+    不会有任何报错，所以只能靠这类静态检查在 CI 里守住。"""
+
+    def test_csproj按版本给运行时(self):
+        import re
+        root = Path(__file__).resolve().parent.parent
+        s = (root / "addin/RevitWy.Plugin/RevitWy.Plugin.csproj").read_text(encoding="utf-8")
+        assert "'$(RevitVersion)' &lt; '2025'" in s
+        assert "net8.0-windows" in s and "net48" in s
+        assert "net10.0-windows" in s          # 2027+ 预留
+        # 每个版本独立输出目录，避免装错 DLL
+        assert "bin\\$(RevitVersion)" in s
+
+    def test_工程文件是合法XML(self):
+        import xml.dom.minidom as m
+        root = Path(__file__).resolve().parent.parent
+        for f in ("RevitWy.Plugin.csproj", "RevitWy.Plugin.addin"):
+            m.parse(str(root / "addin/RevitWy.Plugin" / f))
+        # .addin 一份清单可用于所有版本：注释里列路径可以，但元素里不能写死某一年
+        import xml.etree.ElementTree as ET
+        addin = ET.parse(str(root / "addin/RevitWy.Plugin/RevitWy.Plugin.addin"))
+        # 只检查真正的配置字段：Assembly / FullClassName 不能带版本号
+        ns = {"r": ""}
+        for e in addin.iter():
+            if e.tag in ("Assembly", "FullClassName", "ClientId"):
+                assert "2022" not in (e.text or ""), f"{e.tag} 写死版本：{e.text}"
+
+    def test_业务代码不直接用IntegerValue(self):
+        """2024 废弃、2025 抛异常；只允许 Compat.cs 里受控使用。"""
+        root = Path(__file__).resolve().parent.parent
+        offenders = []
+        for f in (root / "addin").rglob("*.cs"):
+            if f.name == "Compat.cs":
+                continue
+            txt = f.read_text(encoding="utf-8")
+            # 允许出现在注释里
+            for i, line in enumerate(txt.splitlines(), 1):
+                code = line.split("//")[0]
+                if "IntegerValue" in code:
+                    offenders.append(f"{f.name}:{i}")
+        assert offenders == []
+
+    def test_类别判断不再拿负数枚举比数值(self):
+        root = Path(__file__).resolve().parent.parent
+        txt = (root / "addin/RevitWy.Plugin/Commands/CommandDispatcher.cs").read_text(encoding="utf-8")
+        code = "\n".join(l.split("//")[0] for l in txt.splitlines())
+        assert "(int)BuiltInCategory" not in code
+        assert "Compat.IsCategory" in code

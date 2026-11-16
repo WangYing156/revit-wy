@@ -19,6 +19,12 @@ REM ===========================================================================
 setlocal EnableDelayedExpansion
 chcp 65001 >nul 2>&1
 cd /d "%~dp0"
+REM Strip the trailing backslash from %~dp0. On Windows a trailing \ before a
+REM closing quote ESCAPES the quote (MSVC argv rules), so
+REM   --root "D:\repo\"  --python "..."
+REM becomes a single argument and every path silently breaks.
+set "ROOT=%~dp0"
+if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
 echo.
 echo ===========================================================
@@ -52,7 +58,7 @@ set "VPY=%~dp0.venv\Scripts\python.exe"
 if exist "%VPY%" goto :venv_ready
 
 echo       Creating virtualenv (about 1 minute)...
-%PYCMD% -m venv "%~dp0.venv"
+%PYCMD% -m venv "%ROOT%\.venv"
 if not exist "%VPY%" goto :venv_fail
 
 :venv_ready
@@ -61,10 +67,10 @@ if not errorlevel 1 goto :deps_ok
 
 echo       Installing dependencies (1-3 minutes)...
 "%VPY%" -m pip install --upgrade pip -q
-"%VPY%" -m pip install -q -e "%~dp0."
+"%VPY%" -m pip install -q -e "%ROOT%."
 if errorlevel 1 (
     echo       Retrying with Tsinghua mirror...
-    "%VPY%" -m pip install -q -e "%~dp0." -i https://pypi.tuna.tsinghua.edu.cn/simple
+    "%VPY%" -m pip install -q -e "%ROOT%." -i https://pypi.tuna.tsinghua.edu.cn/simple
 )
 "%VPY%" -c "import ezdxf, yaml, mcp" >nul 2>&1
 if errorlevel 1 goto :deps_fail
@@ -89,21 +95,35 @@ exit /b 1
 echo [2/6] Dependencies ready
 
 REM ------------------------------------------------------------- 3. add-in
-if not exist "C:\Program Files\Autodesk\Revit 2022\Revit.exe" goto :no_revit
+REM Supported: Revit 2022 and newer (2022-2024 -> net48, 2025+ -> .NET 8).
+REM NOTE: inside a parenthesised block, "set X=1" next to ")" is ambiguous.
+REM Set with quotes and read the value back after the block, so nothing
+REM depends on in-block variable expansion.
+set "REVIT_FOUND=0"
+set "ADDIN_OK=0"
+for %%v in (2022 2023 2024 2025 2026 2027) do call :probe "%%v"
+goto :probe_done
 
-if exist "%APPDATA%\Autodesk\Revit\Addins\2022\RevitWy.Plugin.addin" goto :addin_done
+:probe
+if exist "C:\Program Files\Autodesk\Revit %~1\Revit.exe" set "REVIT_FOUND=1"
+if exist "%APPDATA%\Autodesk\Revit\Addins\%~1\RevitWy.Plugin.addin" set "ADDIN_OK=1"
+goto :eof
+
+:probe_done
+if "%REVIT_FOUND%"=="0" goto :no_revit
+if "%ADDIN_OK%"=="1" goto :addin_done
 
 where dotnet >nul 2>&1
 if errorlevel 1 goto :no_dotnet
 
-echo       Compiling Revit add-in (1-2 minutes)...
+echo       Compiling Revit add-in (1-2 minutes per installed version)...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-addin.ps1" -Deploy
 if errorlevel 1 goto :addin_fail
 echo [3/6] Add-in compiled and deployed
 goto :addin_done
 
 :no_revit
-echo [3/6] Revit 2022 not found - skipping add-in
+echo [3/6] No Revit 2022+ found - skipping add-in
 echo       Everything except "write into Revit" still works.
 echo       Try it now:  .venv\Scripts\python -m revit_wy.cli demo
 goto :addin_done
@@ -122,12 +142,12 @@ goto :addin_done
 
 REM ------------------------------------------------------------- 4. MCP config
 echo [4/6] Writing MCP client config...
-"%VPY%" -m revit_wy.install_mcp --root "%~dp0" --python "%VPY%"
+"%VPY%" -m revit_wy.install_mcp --root "%ROOT%" --python "%VPY%"
 if errorlevel 1 echo       (partial failure - see messages above)
 
 REM ------------------------------------------------------------- 5. self-test
 echo [5/6] Self-test (5-stage pipeline on a sample drawing)...
-"%VPY%" -m revit_wy.cli dwg "%~dp0samples\arch_plan.dxf" --out "%~TEMP%\revit-wy-selftest" >nul 2>&1
+"%VPY%" -m revit_wy.cli dwg "%ROOT%\samples\arch_plan.dxf" --out "%~TEMP%\revit-wy-selftest" >nul 2>&1
 if errorlevel 1 goto :selftest_fail
 echo       Pipeline OK
 goto :start_viewer
@@ -149,9 +169,9 @@ echo.
 start "" /b cmd /c "timeout /t 3 >nul & start http://127.0.0.1:8770/"
 
 if exist "%~dp0samples\arch_plan.dxf" (
-    "%VPY%" "%~dp0tools\viewer\server.py" "%~dp0samples\arch_plan.dxf" --host 127.0.0.1 --port 8770
+    "%VPY%" "%ROOT%\tools\viewer\server.py" "%ROOT%\samples\arch_plan.dxf" --host 127.0.0.1 --port 8770
 ) else (
-    "%VPY%" "%~dp0tools\viewer\server.py" --host 127.0.0.1 --port 8770
+    "%VPY%" "%ROOT%\tools\viewer\server.py" --host 127.0.0.1 --port 8770
 )
 
 echo.

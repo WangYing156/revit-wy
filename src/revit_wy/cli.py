@@ -12,7 +12,7 @@
     revit-wy review    a.dxf -p arch        生成“数模对照”确认单  ← 需求1
     revit-wy confirm   --review review.csv  回灌确认结果
     revit-wy build     a.dxf --dry-run      构建 IR + 可选写入 Revit
-    revit-wy build     a.dxf --send         真正写入 Revit 2022
+    revit-wy build     a.dxf --send         真正写入 Revit 2022+
 """
 from __future__ import annotations
 
@@ -46,6 +46,18 @@ def _print(obj: Any) -> None:
     print(json.dumps(obj, ensure_ascii=False, indent=2))
 
 
+def _installed_revit_versions() -> List[str]:
+    """本机装了哪些 Revit（2022+）。项目支持 2022 及以上，逐版本编译部署。"""
+    out: List[str] = []
+    if sys.platform == "win32":
+        base = Path(r"C:\Program Files\Autodesk")
+        if base.exists():
+            for y in range(2022, 2036):
+                if (base / f"Revit {y}" / "RevitAPI.dll").exists():
+                    out.append(str(y))
+    return out
+
+
 # ------------------------------------------------------------------ doctor
 def cmd_doctor(args) -> int:
     import ezdxf
@@ -58,6 +70,7 @@ def cmd_doctor(args) -> int:
         "user_dir": str(cfg.USER_CONFIG_DIR),
         "autocad": {"accoreconsole": find_accoreconsole() or "未找到",
                     "oda": find_oda() or "未找到"},
+        "revit_versions_installed": _installed_revit_versions(),
         "revit_bridge": probe(args.host, args.port),
     }
     _print(info)
@@ -442,7 +455,7 @@ def cmd_demo(args) -> int:
         print(_c("h", "\n  下一步你可以："))
         print(f"     · 看可视化：revit-wy panel {src}  → http://127.0.0.1:8770/")
         print(f"     · 看确认单：{r.review.get('markdown', '')}")
-        print(f"     · 装好 Revit 2022 后，把 {src.name} 用 --send 真正写进去")
+        print(f"     · 装好 Revit 2022 或更高版本后，把 {src.name} 用 --send 真正写进去")
         print(_c("dim", "\n  注意：本次写入的是假 Revit（内存里的构件计数），"
                         "真实建模效果要在 Revit 里看。"))
         return 0
@@ -459,7 +472,7 @@ def cmd_status(args) -> int:
 
 # ------------------------------------------------------------------ 入口
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser("revit-wy", description=f"AutoCAD→Revit 2022 一键翻模 v{__version__}")
+    ap = argparse.ArgumentParser("revit-wy", description=f"AutoCAD→Revit 2022+ 一键翻模 v{__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     d = sub.add_parser("doctor", help="环境自检")

@@ -264,7 +264,7 @@ def judge(task: Task, res: TaskResult, final_text: str,
 
 
 # ============================================================== 执行器
-SYSTEM_PROMPT = """你是 revit-wy 的建模助手，负责把 AutoCAD 图纸翻成 Revit 2022 模型。
+SYSTEM_PROMPT = """你是 revit-wy 的建模助手，负责把 AutoCAD 图纸翻成 Revit 模型。
 
 规则：
 1. 只能用给定工具做事，不要编造工具名或返回值。

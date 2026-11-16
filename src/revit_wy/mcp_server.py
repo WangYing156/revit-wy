@@ -30,6 +30,7 @@ from . import __version__
 from . import config as cfg
 from .bridge import RevitBridge, probe
 from .dwg import extract, scan
+from .ir import _target_revit
 from .ir import assign_host_walls, build as build_ir
 from .mapping import LayerMapper, load_aliases, save_aliases
 from .report import read_overrides, rules_summary, write_review
@@ -44,7 +45,7 @@ mcp = _Server(
     "revit-wy",
     version=__version__,
     instructions=(
-        "AutoCAD 图纸转 Revit 2022 构件的工具集。\n"
+        "AutoCAD 图纸转 Revit 2022+ 构件的工具集。\n"
         "推荐路径：① 先 rwy_dwg_to_model 一步跑完转换/体检/对照/清洗/建构件；"
         "② 若返回 blockers（如「有 N 个图层未能自动归类」），把图层名和你的判断"
         "用 rwy_confirm_mapping 确认后重试；③ rwy_build(dry_run=true) 看将建什么，"
@@ -207,7 +208,7 @@ def rwy_get_rules(custom_rules_path: str = "", as_table: bool = True) -> Dict[st
         return _err(str(ex))
     return _ok(
         profile=rules.get("profile"),
-        revit_version=rules.get("target_revit_version"),
+        revit_version=_target_revit(rules),
         summary=rules_summary(rules) if as_table else None,
         full=rules if not as_table else None,
         editable_copy_hint=("复制 config/bim_rules/default.yaml 到 "
@@ -346,7 +347,7 @@ def rwy_build(dry_run: bool = True, confirm: bool = False,
               host: str = "127.0.0.1", port: int = 48880,
               auto_save: bool = True,
               replace_existing: bool = False) -> Dict[str, Any]:
-    """把 IR 写入 Revit 2022。默认 dry_run=true 只校验不创建。
+    """把 IR 写入 Revit 2022+（插件按本机版本编译，协议一致）。默认 dry_run=true 只校验不创建。
 
     真正落模型必须 dry_run=false 且 confirm=true（双重保险，防止 LLM 误触发）。
 

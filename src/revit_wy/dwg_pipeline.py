@@ -309,7 +309,7 @@ def run_dwg(
         "看效果：revit-wy panel " + str(dxf) + "  → 浏览器打开 http://127.0.0.1:8770/")
     res.next_steps.append(
         "落模型：revit-wy build " + str(dxf) + " --dry-run 先干跑；"
-        "确认后 --send 写入 Revit 2022")
+        "确认后 --send 写入 Revit 2022+")
     res.next_steps.append(
         "或交给 AI：在 Cursor/WorkBuddy 里说「把 " + dwg_p.name + " 翻成模型，先干跑」")
     return res

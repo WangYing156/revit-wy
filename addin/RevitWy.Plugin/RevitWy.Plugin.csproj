@@ -1,48 +1,88 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  RevitWy.Plugin 构建配置
-  目标：.NET Framework 4.8 + Revit 2022（API 版本 2022.0）
-  说明：
-    * Revit 2022 附属程序集路径写死为本机安装路径，如需换机器请改 RevitApiDir。
-    * 不 Copy Local RevitAPI*.dll（由 Revit.exe 提供，复制会导致版本冲突）。
-    * Address 类型已由 NuGet Revit API 提供，无需手工引用 AcCui.dll。
+  RevitWy.Plugin 构建配置 —— 单代码库，多 Revit 版本
+
+  支持 Revit 2022 及以上。版本与运行时的对应关系（Autodesk 官方口径）：
+
+      Revit 2022 – 2024  →  net48            （.NET Framework 4.8）
+      Revit 2025 – 2026  →  net8.0-windows   （.NET 8）
+      Revit 2027+        →  net10.0-windows   （.NET 10，预留）
+
+  用法
+  ====
+  默认按本机最高版本编译：
+
+      dotnet build addin/RevitWy.Plugin -c Release
+
+  指定版本（一次一个，或脚本里循环）：
+
+      dotnet build addin/RevitWy.Plugin -c Release -p:RevitVersion=2024
+      dotnet build addin/RevitWy.Plugin -c Release -p:RevitVersion=2025
+
+  不想装 Revit 也能编译（走 NuGet 的 API 包，CI 用）：
+
+      dotnet build addin/RevitWy.Plugin -p:UseNugetRevitApi=true -p:RevitVersion=2025
+
+  为什么不做成一次 build 内 Multi-Target
+  ===================================
+  每个 Revit 版本的 API 程序集不同，且 .addin 清单要指向该版本自己的 DLL，
+  混在一个 bin 目录里极易装错（装错的后果是 Revit 静默跳过，连报错都没有）。
+  所以这里用"一个版本一次编译、各自独立输出目录"的方式，由
+  scripts/build-addin.ps1 统一编排，安装时再按版本部署。
+  这比 MSBuild 的 Multi-Target 啰嗦，但能保证"哪个 DLL 属于哪个 Revit"永远清楚。
 -->
+
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
-    <LangVersion>9.0</LangVersion>
+    <!-- 目标 Revit 版本。可被 -p:RevitVersion=20xx 覆盖。 -->
+    <RevitVersion Condition="'$(RevitVersion)' == ''">2022</RevitVersion>
+
+    <!--
+      按 RevitVersion 决定 TargetFramework 与编译符号。
+      规则来自 Autodesk 的 Development Requirements：
+        2022–2024 → net48；2025–2026 → net8.0-windows；2027+ → net10.0-windows
+    -->
+    <TargetFramework Condition="'$(RevitVersion)' &lt; '2025'">net48</TargetFramework>
+    <TargetFramework Condition="'$(RevitVersion)' == '2025'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(RevitVersion)' == '2026'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(RevitVersion)' &gt; '2026'">net10.0-windows</TargetFramework>
+
+    <!-- 版本符号，供 Compat.cs 与业务代码做 #if 分支 -->
+    <DefineConstants>$(DefineConstants);REVIT_$(RevitVersion)</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2023'">$(DefineConstants);REVIT_2023_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2024'">$(DefineConstants);REVIT_2024_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2025'">$(DefineConstants);REVIT_2025_OR_GREATER;REVIT_NET8_OR_GREATER</DefineConstants>
+    <DefineConstants Condition="'$(RevitVersion)' &gt;= '2027'">$(DefineConstants);REVIT_2027_OR_GREATER</DefineConstants>
+
+    <LangVersion>latest</LangVersion>
     <AssemblyName>RevitWy.Plugin</AssemblyName>
     <RootNamespace>RevitWy.Plugin</RootNamespace>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
-    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <Company>revit-wy</Company>
     <Product>revit-wy 一键翻模</Product>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
     <NoWarn>MSB3277</NoWarn>
-    <!-- 供 NuGet 的 Revit API 包使用的版本号 -->
-    <RevitVersion>2022</RevitVersion>
-    <!-- 停靠面板需要 WPF + WinForms（TaskDialog/文件夹对话框会用到） -->
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- 每个 Revit 版本独立输出目录，避免装错 DLL -->
+    <BaseOutputPath>bin\$(RevitVersion)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>obj\$(RevitVersion)\</BaseIntermediateOutputPath>
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit $(RevitVersion)</RevitApiDir>
   </PropertyGroup>
 
-  <!-- Revit 2022 API 引用方式二选一 -->
+  <!-- ============================ API 引用 ============================ -->
   <PropertyGroup Condition="'$(UseNugetRevitApi)' == 'true'">
-    <!-- 方式 A：NuGet（推荐 CI 使用，免装 Revit 也能编译） -->
     <DefineConstants>$(DefineConstants);USE_NUGET_API</DefineConstants>
   </PropertyGroup>
 
-  <PropertyGroup Condition="'$(UseNugetRevitApi)' != 'true'">
-    <!-- 方式 B：本机 Revit 安装目录引用（推荐设计院离线环境） -->
-    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit 2022</RevitApiDir>
-  </PropertyGroup>
-
   <ItemGroup Condition="'$(UseNugetRevitApi)' == 'true'">
-    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2022.*" />
-    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2022.*" />
+    <!-- Nice3point 的 API 包按 Revit 版本分发，版本号跟着 RevitVersion 走 -->
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="$(RevitVersion).*" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="$(RevitVersion).*" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UseNugetRevitApi)' != 'true'">
@@ -58,8 +98,14 @@
     </Reference>
   </ItemGroup>
 
+  <!-- ============================ 依赖 ============================ -->
   <ItemGroup>
-    <!-- Revit 2022 自带 Newtonsoft.Json 13.x，保持一致避免版本冲突 -->
+    <!--
+      net48 下用 Newtonsoft.Json 13.x（Revit 2022–2024 自带 13.x）。
+      net8.0-windows 下 Revit 2025+ 改带 System.Text.Json 生态，仍可继续用
+      Newtonsoft（它会以 Private=true 随插件部署，不依赖 Revit 自带版本）。
+      这里统一用 Newtonsoft，避免两份 JSON 代码路径。
+    -->
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
@@ -72,10 +118,11 @@
     </None>
   </ItemGroup>
 
-  <!-- 编译后自动部署到 %APPDATA%\Autodesk\Revit\Addins\2022 -->
+  <!-- ============================ 部署 ============================ -->
+  <!-- 部署到 %APPDATA%\Autodesk\Revit\Addins\<版本> -->
   <Target Name="DeployToRevit" AfterTargets="Build" Condition="'$(DeployToRevit)' == 'true'">
     <PropertyGroup>
-      <RevitAddinDir>$(APPDATA)\Autodesk\Revit\Addins\2022</RevitAddinDir>
+      <RevitAddinDir>$(APPDATA)\Autodesk\Revit\Addins\$(RevitVersion)</RevitAddinDir>
       <DeployDir>$(RevitAddinDir)\revit-wy</DeployDir>
     </PropertyGroup>
     <MakeDir Directories="$(DeployDir)" />
@@ -85,7 +132,7 @@
     <Copy SourceFiles="$(ProjectDir)config.json" DestinationFolder="$(DeployDir)"
           Condition="Exists('$(ProjectDir)config.json')" />
     <Copy SourceFiles="$(ProjectDir)RevitWy.Plugin.addin" DestinationFolder="$(RevitAddinDir)" />
-    <Message Text="revit-wy 已部署到 $(RevitAddinDir)" Importance="high" />
+    <Message Text="revit-wy 已部署到 $(RevitAddinDir)（Revit $(RevitVersion)）" Importance="high" />
   </Target>
 
 </Project>

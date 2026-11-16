@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Revit 插件清单。部署到：
+  Revit 插件清单（一份文件，装到每个版本的目录下，内容不变）。
+
+  部署位置（按 Revit 版本放，目录名就是版本号）：
     %APPDATA%\Autodesk\Revit\Addins\2022\RevitWy.Plugin.addin
+    %APPDATA%\Autodesk\Revit\Addins\2023\RevitWy.Plugin.addin
+    ...
     （单用户）或
-    C:\Program Files\Autodesk\Revit 2022\AddIns\RevitWy.Plugin.addin
+    C:\Program Files\Autodesk\Revit 20xx\AddIns\RevitWy.Plugin.addin
     （全机器，需管理员）
-  Assembly 路径必须是绝对路径或相对 .addin 所在目录的相对路径。
+
+  Assembly 用相对路径，相对 .addin 所在目录解析。
+  每个版本只需放"该版本编译出的那个 DLL"进来（见 bin\<版本>\...），
+  不同版本的 DLL 不能混用——混用的表现是 Revit 静默跳过、连报错都没有。
 -->
 <RevitAddIns>
   <AddIn Type="Application">
@@ -14,6 +21,6 @@
     <FullClassName>RevitWy.Plugin.WyApp</FullClassName>
     <ClientId>8f3a7c2e-4d1b-4a6f-9c5e-2b8d7f1a6c30</ClientId>
     <VendorId>REVITWY</VendorId>
-    <VendorDescription>revit-wy — AutoCAD 到 Revit 2022 一键翻模</VendorDescription>
+    <VendorDescription>revit-wy — AutoCAD 到 Revit 2022+ 一键翻模</VendorDescription>
   </AddIn>
 </RevitAddIns>

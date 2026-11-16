@@ -491,14 +491,17 @@ namespace RevitWy.Plugin
 
         private static string KindOf(Element e)
         {
-            var cat = e.Category != null ? e.Category.Id.IntegerValue : 0;
-            if (cat == (int)BuiltInCategory.OST_Walls) return "walls";
-            if (cat == (int)BuiltInCategory.OST_StructuralColumns) return "columns";
-            if (cat == (int)BuiltInCategory.OST_StructuralFraming) return "beams";
-            if (cat == (int)BuiltInCategory.OST_Floors) return "slabs";
-            if (cat == (int)BuiltInCategory.OST_Doors) return "doors";
-            if (cat == (int)BuiltInCategory.OST_Windows) return "windows";
-            if (cat == (int)BuiltInCategory.OST_Grids) return "grids";
+            // 早期实现写的是 (int)BuiltInCategory.OST_Walls（负数，如 -2000011）
+            // 与 ElementId.IntegerValue（文档分配的正数）比较，永远不相等，
+            // 于是类别过滤静默失效。这里改用 Compat.IsCategory 比较 ElementId，
+            // 同时顺带解决 2024+ IntegerValue 废弃 / 2025+ 抛异常的问题。
+            if (Compat.IsCategory(e, BuiltInCategory.OST_Walls)) return "walls";
+            if (Compat.IsCategory(e, BuiltInCategory.OST_StructuralColumns)) return "columns";
+            if (Compat.IsCategory(e, BuiltInCategory.OST_StructuralFraming)) return "beams";
+            if (Compat.IsCategory(e, BuiltInCategory.OST_Floors)) return "slabs";
+            if (Compat.IsCategory(e, BuiltInCategory.OST_Doors)) return "doors";
+            if (Compat.IsCategory(e, BuiltInCategory.OST_Windows)) return "windows";
+            if (Compat.IsCategory(e, BuiltInCategory.OST_Grids)) return "grids";
             return null;
         }
 

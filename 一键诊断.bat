@@ -13,6 +13,9 @@ REM ===========================================================================
 setlocal
 chcp 65001 >nul 2>&1
 cd /d "%~dp0"
+REM Trailing backslash before a closing quote escapes it - keep ROOT clean.
+set "ROOT=%~dp0"
+if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
 echo.
 echo ===========================================================
@@ -32,7 +35,7 @@ pause
 exit /b 1
 
 :have_py
-"%VPY%" -m revit_wy.diagnose --root "%~dp0" %*
+"%VPY%" -m revit_wy.diagnose --root "%ROOT%" %*
 if errorlevel 2 goto :self_error
 
 echo.

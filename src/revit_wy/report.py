@@ -16,6 +16,7 @@ from typing import Any, Dict, List, Optional
 
 from .config import save_yaml
 from .dwg import DrawingInfo, LayerStats
+from .ir import _target_revit
 from .mapping import LayerMapper, MatchResult, normalize
 
 ACTION_CN = {
@@ -219,7 +220,7 @@ def _write_confirmed(info, results, mapper, out: Path) -> Path:
 def rules_summary(rules: Dict[str, Any]) -> Dict[str, Any]:
     wall = rules.get("wall", {})
     return {
-        "目标 Revit": rules.get("target_revit_version", "2022"),
+        "目标 Revit": _target_revit(rules),
         "墙族/类型": f"{wall.get('family','基本墙')} · "
                     f"{wall.get('type_name_template','常规 - {thickness}mm')}",
         "墙默认厚": f"{wall.get('fallback_thickness_mm', 200)} mm",

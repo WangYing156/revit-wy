@@ -1,4 +1,4 @@
-"""revit-wy: AutoCAD → Revit 2022 一键翻模工具链。
+"""revit-wy: AutoCAD → Revit 2022+ 一键翻模工具链。
 
 模块划分
 --------

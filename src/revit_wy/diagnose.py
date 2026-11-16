@@ -31,7 +31,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-REVIT_VERSIONS = ["2021", "2022", "2023", "2024"]
+# 支持 Revit 2022 及以上。版本与运行时（Autodesk 官方口径）：
+#   2022-2024 -> .NET Framework 4.8
+#   2025-2026 -> .NET 8
+#   2027+     -> .NET 10
+# 扫描按年递增，遇到 2035 停（防御未来目录名异常）。
+SUPPORTED_MIN = 2022
+REVIT_VERSIONS = [str(y) for y in range(2022, 2036)]
 DEFAULT_PORT = 48880
 VIEWER_PORT = 8770
 
@@ -66,10 +72,42 @@ class Section:
 
 
 # ------------------------------------------------------------------ 各段检查
+def _clean(raw: str | Path) -> Path:
+    """与 install_mcp.clean_path 同一套清洗规则。
+
+    Windows 上 `--root "D:\\path\\"` 的尾反斜杠会转义闭合引号，
+    导致整个路径变成 `D:\\path" --python ...`。这里必须能自愈，
+    否则诊断报告会把一个明显的引号问题报成"虚拟环境不存在"。
+    """
+    s = str(raw).strip().strip('"').strip("'").rstrip("\\/").strip()
+    if '"' in s:
+        s = s.split('"')[0].rstrip("\\/")
+    return Path(s)
+
+
+def _venv_python(root: Path) -> Path:
+    """找 .venv 里的 python。
+
+    兼容两种情形：从仓库根运行，以及直接用 .venv 里的解释器运行（此时
+    root 可能指错）。后者很常见——用户双击的那个 .bat 用的就是 .venv 的 python。
+    """
+    cands = [root / ".venv" / ("Scripts/python.exe" if os.name == "nt"
+                               else "bin/python")]
+    exe = Path(sys.executable)
+    if ".venv" in exe.parts:
+        cands.append(exe)
+    for c in cands:
+        if c.exists():
+            return c
+    return cands[0]
+
+
 def check_python(sec: Section, root: Path) -> None:
-    vpy = root / ".venv" / ("Scripts/python.exe" if os.name == "nt"
-                            else "bin/python")
+    vpy = _venv_python(root)
     sec.add("Python（当前进程）", "ok", f"{platform.python_version()} @ {sys.executable}")
+    if root.name and " " in root.name or '"' in str(root):
+        sec.add("仓库路径可疑", "warn", f"{root}",
+                "路径含引号/异常字符，建议换到不含空格与特殊符号的目录")
     if vpy.exists():
         sec.add("虚拟环境 .venv", "ok", str(vpy))
         try:
@@ -106,29 +144,34 @@ def _revit_dirs() -> List[Path]:
     return out
 
 
+def dotnet_framework_for(version: str) -> str:
+    """Revit 版本 → 该版本插件必须编译到的运行时。用错的表现是静默不加载。"""
+    v = int(version)
+    if v >= 2027:
+        return "net10.0-windows"
+    if v >= 2025:
+        return "net8.0-windows"
+    return "net48"
+
+
 def check_revit(sec: Section) -> None:
     found = _revit_dirs()
     if not found:
-        sec.add("Revit", "warn", "本机未安装 Revit（任何版本）",
-                "没有 Revit 也能用：图纸清洗→数模对照→构件清单→可视化预览→导出 "
-                "全部可用，只是不能真正写入模型。要写入需安装 Revit 2022（企业版含 API）。")
+        sec.add("Revit", "warn", f"本机未安装 Revit {SUPPORTED_MIN} 及以上",
+                f"没有 Revit 也能用：图纸清洗→数模对照→构件清单→可视化预览→导出 "
+                f"全部可用，只是不能真正写入模型。要写入需安装 Revit {SUPPORTED_MIN} 或更高。")
         return
-    for d in found:
-        ver = d.name.replace("Revit ", "")
-        if ver == "2022":
-            sec.add("Revit 2022", "ok", str(d))
-        else:
-            sec.add(f"Revit {ver}", "warn", "版本不是 2022",
-                    "本项目只编译/部署到 2022；其他版本需改 csproj 的 RevitVersion 后重编译")
-
-    if not any("2022" in p.name for p in found):
-        sec.add("Revit 2022", "bad", "未安装目标版本",
-                "装 Revit 2022，或改 addin/RevitWy.Plugin/*.csproj 里的 RevitVersion 适配现有版本")
+    versions = sorted(d.name.replace("Revit ", "") for d in found)
+    for d, ver in zip(found, versions):
+        sec.add(f"Revit {ver}", "ok",
+                f"{d}（插件需编译到 {dotnet_framework_for(ver)}）")
+    sec.add("检测到版本", "ok", "、".join(versions) + "（项目支持 2022 及以上，含这些版本）")
 
 
 def check_addin(sec: Section) -> None:
     appdata = Path(os.environ.get("APPDATA", ""))
     added = False
+    installed = {d.name.replace("Revit ", "") for d in _revit_dirs()}
     for v in REVIT_VERSIONS:
         d = appdata / "Autodesk" / "Revit" / "Addins" / v
         manifest = d / "RevitWy.Plugin.addin"
@@ -144,8 +187,17 @@ def check_addin(sec: Section) -> None:
                         "重跑 scripts\\build-addin.ps1 -Deploy（清单与 DLL 必须成对）")
     if not added:
         sec.add("Revit 插件", "warn", "未部署 .addin 清单",
-                "在装了 Revit 2022 的机器上执行 scripts\\build-addin.ps1 -Deploy；"
-                "无 Revit 的机器跳过此项即可")
+                "执行 scripts\\build-addin.ps1 -Deploy（会自动按已装版本逐个编译部署）；"
+                f"无 Revit 的机器跳过此项即可")
+    elif installed:
+        deployed = {it.title.split("（")[1].rstrip("）")
+                    for it in sec.items
+                    if it.level == "ok" and it.title.startswith("插件清单")}
+        missing = sorted(installed - deployed)
+        if missing:
+            sec.add("插件未覆盖的 Revit 版本", "warn", "、".join(missing),
+                    "这些版本装了但没部署插件，Revit 里不会有 revit-wy 页签；"
+                    "运行 scripts\\build-addin.ps1 -Deploy 会自动补齐")
 
 
 def _port_open(port: int, timeout: float = 1.0) -> bool:
@@ -266,7 +318,7 @@ def check_pipeline(sec: Section, root: Path) -> None:
 # ------------------------------------------------------------------ 汇总
 def run_all(root: str | Path = ".", port: int = DEFAULT_PORT,
             viewer_port: int = VIEWER_PORT) -> List[Section]:
-    root = Path(root).resolve()
+    root = _clean(root).resolve()
     secs = [
         Section("1. Python 与依赖"),
         Section("2. Revit 与本项目插件"),
@@ -297,7 +349,7 @@ def verdict(secs: List[Section]) -> tuple[str, List[str]]:
     """给出"当前能走到哪一步"的判断 + 待办清单。"""
     todos = [f"{it.title}：{it.fix}" for s in secs for it in s.items
              if it.level in ("bad", "warn") and it.fix]
-    has_revit = any(it.level == "ok" and "Revit 2022" in it.title
+    has_revit = any(it.level == "ok" and it.title.startswith("Revit 20")
                     for s in secs for it in s.items)
     pipeline_ok = any(it.title == "流水线自检" and it.level == "ok"
                       for s in secs for it in s.items)

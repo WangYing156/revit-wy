@@ -27,6 +27,22 @@ from typing import Any, Dict, List, Optional
 SERVER_NAME = "revit-wy"
 
 
+def clean_path(raw: str) -> Path:
+    """把命令行传进来的路径洗干净。
+
+    真实事故：Windows 上 `--root "F:\\...\\revit-wy\\"` 结尾的反斜杠把闭合引号
+    转义掉了，cmd 于是把后面的 `--python "..."` 一起塞进了 --root 的值里。
+    结果 PYTHONPATH 变成 `...\\revit-wy" --python ...\\python.exe\\src`。
+    .bat 已改成不带尾反斜杠，但入口这里也必须自己兜住——参数脏了要能看出来，
+    而不是默默写出一个坏配置。
+    """
+    s = str(raw).strip().strip('"').strip("'").rstrip("\\/").strip()
+    # 上面只去掉尾部，这里再防一手：路径中间出现引号说明已经被拼坏了
+    if '"' in s:
+        s = s.split('"')[0].rstrip("\\/")
+    return Path(s)
+
+
 def _home() -> Path:
     return Path(os.environ.get("USERPROFILE") or Path.home())
 
@@ -87,7 +103,8 @@ def install(root: str | Path = ".", profile: str = "arch",
             cursor_global: bool = False,
             workbuddy: bool = True,
             cursor_project: bool = True) -> List[Dict[str, str]]:
-    root = Path(root).resolve()
+    root = clean_path(root).resolve()
+    python = str(clean_path(python)) if python else ""
     entry = build_entry(root, profile, python)
     results: List[Dict[str, str]] = []
 
