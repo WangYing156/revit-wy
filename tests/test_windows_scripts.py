@@ -67,32 +67,128 @@ class TestBatLabels:
         assert "pause" in text
 
 
-class TestInstallerPaths:
-    def test_pip不再用拼错的项目路径(self):
-        """曾经的 bug：-e "%ROOT%." 会拼成 F:\\repo\\.  这是"根本跑不起来"的根因。"""
+class TestLauncherDelegation:
+    """编排逻辑必须留在 Python 里。
+
+    前四轮"跑不起来"全部是 cmd 语法/编码问题，而 cmd 没有异常、没有栈、
+    没有日志——失败信息在屏幕上一闪就没。所以 .bat 只允许做两件事：
+    找到 Python、把控制权交给 setup_launcher。
+    """
+
+    def test_启动脚本只做委派(self):
         text = _bat("一键启动.bat").decode("ascii")
-        assert '-e "%ROOT%."' not in text
-        assert '-e "%ROOT%"' in text
+        assert "revit_wy.setup_launcher" in text
+        # 不再自己装依赖/编译/起服务
+        assert "pip install" not in text, "pip 不能留在 cmd 里"
+        assert "build-addin.ps1" not in text, "编译不能留在 cmd 里"
+        assert "server.py" not in text, "起服务不能留在 cmd 里"
+
+    def test_启动脚本仍能自举venv(self):
+        """光有委派不够：全新机器上 .venv 还不存在，得先建出来。"""
+        text = _bat("一键启动.bat").decode("ascii")
+        assert "-m venv" in text
+        assert "goto :bootstrap" in text
+
+    def test_启动脚本不再有括号块(self):
+        """"set 在 if(...) 里" 会吞掉右括号，这是踩过的坑。"""
+        text = _bat("一键启动.bat").decode("ascii")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.upper().startswith("REM") or not stripped:
+                continue
+            assert not stripped.endswith(")"), f"疑似括号块：{line!r}"
+            assert "(" not in stripped or stripped.startswith("echo"), line
+
+    def test_诊断脚本会打印启动日志(self):
+        text = _bat("一键诊断.bat").decode("ascii")
+        assert "setup-*.log" in text
+        assert "type " in text
+
+
+class TestLauncher:
+    """setup_launcher 是真正的编排器，得能跑、能收敛、能落盘。"""
+
+    def test_能跑完并给出结论(self, tmp_path):
+        from revit_wy import setup_launcher
+        log = tmp_path / "setup.log"
+        rc = setup_launcher.run(ROOT, no_viewer=True, log_path=str(log))
+        assert rc in (0, 2)
+        assert log.exists()
+
+    def test_日志带BOM且记录关键信息(self, tmp_path):
+        from revit_wy import setup_launcher
+        log = tmp_path / "setup.log"
+        setup_launcher.run(ROOT, no_viewer=True, log_path=str(log))
+        raw = log.read_bytes()
+        assert raw.startswith(b"\xef\xbb\xbf"), "记事本打开不能乱码"
+        text = raw.decode("utf-8-sig")
+        assert "platform" in text and "python" in text
+        assert "结论" in text
+
+    def test_日志关闭后写不炸(self):
+        from revit_wy.setup_launcher import Log
+        import tempfile
+        log = Log(Path(tempfile.mkdtemp()) / "x.log")
+        log.close()
+        log.write("still safe")     # 退出路径上重复写不该抛
+        log.close()                 # close 必须幂等
+
+    def test_失败会分类给出下一步(self, tmp_path, monkeypatch):
+        """不能只报"失败了"，要给出可执行的动作。"""
+        from revit_wy import setup_launcher as L
+        out = L.Outcome()
+        log = L.Log(tmp_path / "y.log")
+        # 把"所有可能的 Python"都换成必然失败的命令，确保走失败分支
+        monkeypatch.setattr(L, "_which_python", lambda: [["rwy-no-such-python"]])
+        vpy = L.step_venv(tmp_path / "nope", log, out)
+        log.close()
+        assert vpy is None
+        assert out.ok is False
+        assert out.blockers and out.next_steps
+
+    def test_结果对象区分阻断与降级(self):
+        from revit_wy.setup_launcher import Outcome
+        o = Outcome()
+        o.degrade("没装 Revit")
+        assert o.ok is True and o.degraded
+        o.block("依赖装不上")
+        assert o.ok is False and o.blockers
+
+
+class TestInstallerPaths:
+    """这些坑曾经都在 .bat 里，现在搬进 setup_launcher.py —— 断言也跟着搬。"""
+
+    def _launcher(self) -> str:
+        return (ROOT / "src/revit_wy/setup_launcher.py").read_text(encoding="utf-8")
+
+    def test_pip用绝对路径且不加点后缀(self):
+        """曾经的 bug：-e "%ROOT%." 会拼成 F:\\repo\\.  这是"根本跑不起来"的根因。"""
+        text = self._launcher()
+        assert '"install", "-e", str(root)' in text
+        assert 'str(root) + "."' not in text
 
     def test_pip失败有三级兜底(self):
-        text = _bat("一键启动.bat").decode("ascii")
+        text = self._launcher()
         assert "tuna.tsinghua.edu.cn" in text
         assert "--only-binary=:all:" in text
+        assert "直连 PyPI" in text
 
     def test_自检失败会明确停下并给出原因(self):
-        text = _bat("一键启动.bat").decode("ascii")
-        assert "revit_wy.setup_check" in text
-        assert "goto :selfcheck_bad" in text
+        text = self._launcher()
+        assert "setup_check" in text
+        assert 'rep.worst == "bad"' in text
 
-    def test_不再用_cmd_c加timeout开浏览器(self):
+    def test_浏览器在端口起来后再开(self):
         """start /b cmd /c "timeout ... & start url" 在某些环境里会挂住。"""
-        text = _bat("一键启动.bat").decode("ascii")
-        assert "cmd /c \"timeout" not in text
+        text = self._launcher()
         assert "webbrowser.open" in text
+        assert "threading.Timer" in text
+        assert "cmd /c" not in text
 
-    def test_端口被占时给出提示(self):
-        text = _bat("一键启动.bat").decode("ascii")
-        assert "goto :port_busy" in text
+    def test_端口被占时不再起服务(self):
+        text = self._launcher()
+        assert "已被占用" in text
+        assert "def step_ports" in text
 
 
 class TestPowerShellEncoding:
@@ -146,10 +242,10 @@ class TestNet48Build:
         assert "Reference Assemblies" in text
         assert "Developer Pack" in text
 
-    def test_一键启动先试Nuget再回退(self):
-        text = _bat("一键启动.bat").decode("ascii")
-        nuget = text.index("-UseNuget")
-        fallback = text.index("Retrying with the local Revit API DLLs")
+    def test_先试Nuget再回退本地API(self):
+        text = (ROOT / "src/revit_wy/setup_launcher.py").read_text(encoding="utf-8")
+        nuget = text.index('"-UseNuget"')
+        fallback = text.index("改用本地 RevitAPI.dll 重试")
         assert nuget < fallback, "应当先试不需要 Framework 开发包的 NuGet 路径"
 
     def test_所有xml注释里没有连续双减号(self):

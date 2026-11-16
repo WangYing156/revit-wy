@@ -209,6 +209,26 @@ def check_ports(rep: SetupReport) -> None:
                 "没有页签就先跑 scripts\\build-addin.ps1 -Deploy")
 
 
+def check_dotnet(rep: SetupReport) -> None:
+    """编 Revit 插件必须有 dotnet。没有它，插件永远装不上。"""
+    import shutil as _sh
+    exe = _sh.which("dotnet")
+    if not exe:
+        rep.add("dotnet", "dotnet SDK", "warn", "找不到 dotnet 命令",
+                "装 .NET SDK 8+：https://dotnet.microsoft.com/download 。"
+                "不装也能用除『写入 Revit』以外的全部功能")
+        return
+    try:
+        p = subprocess.run([exe, "--list-sdks"], capture_output=True, text=True, timeout=30)
+        lines = [l for l in (p.stdout or "").splitlines() if l.strip()]
+        majors = sorted({l.split(".")[0] for l in lines if l[:1].isdigit()})
+        rep.add("dotnet", "dotnet SDK", "ok",
+                f"{exe}" + (f"（SDK {', '.join(majors)}）" if majors else ""))
+    except Exception as ex:
+        rep.add("dotnet", "dotnet SDK", "warn", f"{type(ex).__name__}: {ex}",
+                "重装 .NET SDK 8+")
+
+
 def check_net48_targeting_pack(rep: SetupReport, root: Path) -> None:
     """编译 Revit 2022–2024 插件需要 .NET Framework 4.8 的引用程序集。
 
@@ -387,6 +407,7 @@ def run(root: str | Path = ".") -> SetupReport:
     check_deps(rep, r)
     check_resources(rep, r)
     check_scripts(rep, r)
+    check_dotnet(rep)
     check_net48_targeting_pack(rep, r)
     check_ports(rep)
     check_addin(rep, r)
