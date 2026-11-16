@@ -34,6 +34,27 @@
 
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!--
+    为什么要忽略工作负载解析（MSB3644 的根因）
+    ==========================================
+    net48 目标需要 .NET Framework 4.8 的**引用程序集**（Targeting Pack）。
+    经典的报错是：
+
+        error MSB3644: 找不到 .NETFramework,Version=v4.8 的引用程序集。
+        请为此框架版本安装开发人员工具包(SDK/目标包)或者重新定向应用程序。
+
+    在装了很多版本 SDK 的机器上（比如同时有 8/9/10），
+    `dotnet build` 会去解析"某个 SDK 工作负载能提供 net48"，
+    一旦解析不到就当成缺 TargetFramework，于是转向 Targeting Pack 并抛 MSB3644，
+    哪怕 C:\Program Files (x86)\Reference Assemblies\...\v4.8 明明存在。
+
+    这里显式声明"net48 由 CodeDom 提供程序负责"，跳过工作负载解析，
+    让 MSBuild 直接使用已有的引用程序集。
+  -->
+  <PropertyGroup>
+    <MSBuildEnableWorkloadResolver>false</MSBuildEnableWorkloadResolver>
+  </PropertyGroup>
+
   <PropertyGroup>
     <!-- 目标 Revit 版本。可被 -p:RevitVersion=20xx 覆盖。 -->
     <RevitVersion Condition="'$(RevitVersion)' == ''">2022</RevitVersion>
@@ -101,12 +122,21 @@
   <!-- ============================ 依赖 ============================ -->
   <ItemGroup>
     <!--
-      net48 下用 Newtonsoft.Json 13.x（Revit 2022–2024 自带 13.x）。
-      net8.0-windows 下 Revit 2025+ 改带 System.Text.Json 生态，仍可继续用
-      Newtonsoft（它会以 Private=true 随插件部署，不依赖 Revit 自带版本）。
-      这里统一用 Newtonsoft，避免两份 JSON 代码路径。
+      Newtonsoft.Json 版本必须**不高于** Revit 自带的版本，否则运行时会崩
+      ================================================================
+      Revit 2022–2024 自带的 Newtonsoft.Json 版本线是 12.x。插件引用 13.x 时，
+      如果 13.x 的 DLL 没被正确加载，就会报经典的
+
+          Could not load file or assembly 'Newtonsoft.Json, Version=13.0.0.0'
+
+      ——本工程第一版就在 ListTypes 上踩过这个，表现为"插件加载了但一调就报错"。
+      net48 下固定用 12.0.3（插件自带的 12.0.3 能和 Revit 的 12.x 互相顶替）。
+      net8.0-windows 下 Revit 2025+ 的依赖解析走 .NET 8 的统一算法，13.x 可用。
     -->
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Newtonsoft.Json" Version="12.0.3"
+                      Condition="'$(TargetFramework)' == 'net48'" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3"
+                      Condition="'$(TargetFramework)' != 'net48'" />
   </ItemGroup>
 
   <ItemGroup>
@@ -117,6 +147,36 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+
+  <!--
+    net48 的 app.config 绑定重定向
+    ==============================
+    Revit 宿主进程的 app.config 我们改不了，但 assembly resolve 会同时看插件目录下的
+    RevitWy.Plugin.dll.config。把 Newtonsoft 重定向到 12.0.0.0，能让"某个传递依赖
+    仍然引用 13.x"的情况也能加载成功。
+    这一项在 net8.0-windows 下无意义，所以只在 net48 生成。
+  -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
+    <None Include="app.net48.config" Condition="Exists('app.net48.config')">
+      <Link>RevitWy.Plugin.dll.config</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    net48 前置检查：MSB3644 时给出能直接照做的一句话
+    ================================================
+    MSBuild 的原生报错是英文 + 一堆链接，用户看不懂该装什么。这里在编译前
+    自己检查引用程序集，缺了就直接抛出中文指令，并明确"最小代价的三条路"。
+  -->
+  <Target Name="CheckNet48ReferenceAssemblies" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(TargetFramework)' == 'net48'">
+    <PropertyGroup>
+      <_RwyFwRefDir Condition="'$(OS)' == 'Windows_NT'">$(ProgramFiles(x86))\Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8</_RwyFwRefDir>
+    </PropertyGroup>
+    <Warning Text="找不到 .NET Framework 4.8 引用程序集：$(_RwyFwRefDir)。三选一：(1) 用 -UseNuget 编译（不需要 .NET Framework 开发包，推荐）；(2) 装 .NET Framework 4.8 Developer Pack；(3) 装 Visual Studio / Build Tools 并勾选 .NET Framework 4.8 targeting pack。"
+             Condition="!Exists('$(_RwyFwRefDir)\mscorlib.dll')" />
+  </Target>
 
   <!-- ============================ 部署 ============================ -->
   <!-- 部署到 %APPDATA%\Autodesk\Revit\Addins\<版本> -->
@@ -129,6 +189,8 @@
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployDir)" />
     <Copy SourceFiles="$(TargetDir)Newtonsoft.Json.dll" DestinationFolder="$(DeployDir)"
           Condition="Exists('$(TargetDir)Newtonsoft.Json.dll')" />
+    <Copy SourceFiles="$(TargetDir)RevitWy.Plugin.dll.config" DestinationFolder="$(DeployDir)"
+          Condition="Exists('$(TargetDir)RevitWy.Plugin.dll.config')" />
     <Copy SourceFiles="$(ProjectDir)config.json" DestinationFolder="$(DeployDir)"
           Condition="Exists('$(ProjectDir)config.json')" />
     <Copy SourceFiles="$(ProjectDir)RevitWy.Plugin.addin" DestinationFolder="$(RevitAddinDir)" />

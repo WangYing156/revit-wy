@@ -35,6 +35,17 @@ pause
 exit /b 1
 
 :have_py
+REM First the launcher self-check: it answers "why does the setup .bat not run?"
+REM then the deeper environment report.
+set "PYTHONPATH=%ROOT%\src"
+echo.
+echo   [1/2] Launcher self-check (why one-click setup fails)...
+echo.
+"%VPY%" -m revit_wy.setup_check --root "%ROOT%"
+
+echo.
+echo   [2/2] Environment report...
+echo.
 "%VPY%" -m revit_wy.diagnose --root "%ROOT%" %*
 if errorlevel 2 goto :self_error
 

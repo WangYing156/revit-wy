@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   revit-wy 一键安装（Python 环境 + 插件部署 + MCP 配置生成）
 
@@ -89,6 +89,6 @@ if ($SkipMcp) {
 }
 
 Write-Host "`n安装完成。下一步：" -ForegroundColor Cyan
-Write-Host "  1) 重启 Revit 2022，功能区出现 revit-wy"
+Write-Host "  1) 重启 Revit（2022 及以上），功能区出现 revit-wy"
 Write-Host "  2) 运行  .venv\Scripts\python -m revit_wy.cli doctor"
 Write-Host "  3) 在 Cursor / WorkBuddy 里让它调用 rwy_doctor"

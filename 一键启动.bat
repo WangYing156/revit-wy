@@ -67,13 +67,23 @@ if not errorlevel 1 goto :deps_ok
 
 echo       Installing dependencies (1-3 minutes)...
 "%VPY%" -m pip install --upgrade pip -q
-"%VPY%" -m pip install -q -e "%ROOT%."
-if errorlevel 1 (
-    echo       Retrying with Tsinghua mirror...
-    "%VPY%" -m pip install -q -e "%ROOT%." -i https://pypi.tuna.tsinghua.edu.cn/simple
-)
+"%VPY%" -m pip install -q -e "%ROOT%"
+if not errorlevel 1 goto :pip_native_ok
+echo       Retrying with Tsinghua mirror...
+"%VPY%" -m pip install -q -e "%ROOT%" -i https://pypi.tuna.tsinghua.edu.cn/simple
+if not errorlevel 1 goto :pip_native_ok
+echo       Native wheels failed. Retrying with prebuilt-only (no compiler needed)...
+"%VPY%" -m pip install -q -e "%ROOT%" --only-binary=:all: --prefer-binary
+:pip_native_ok
 "%VPY%" -c "import ezdxf, yaml, mcp" >nul 2>&1
 if errorlevel 1 goto :deps_fail
+REM Not fatal: converting .dwg -> .dxf needs COM/OLE. Missing it only means
+REM .dxf input works and .dwg input asks for accoreconsole/ODA instead.
+"%VPY%" -c "import win32com.client" >nul 2>&1
+if not errorlevel 1 goto :deps_ok
+echo       [i] pywin32 not installed - .dwg -> .dxf will need AutoCAD/ODA later.
+echo           .dxf input works fine. Add it later with:
+echo             .venv\Scripts\pip.exe install pywin32
 goto :deps_ok
 
 :venv_fail
@@ -93,6 +103,15 @@ exit /b 1
 
 :deps_ok
 echo [2/6] Dependencies ready
+
+REM Run the real self-check before doing anything else. Every failure here
+REM prints a concrete next action, so a broken setup never ends in a pile of
+REM red text with no hint. Exit code 2 = must fix, 0/1 = keep going.
+echo.
+echo [2/6] Self-check...
+set "PYTHONPATH=%ROOT%\src"
+"%VPY%" -m revit_wy.setup_check --root "%ROOT%"
+if errorlevel 2 goto :selfcheck_bad
 
 REM ------------------------------------------------------------- 3. add-in
 REM Supported: Revit 2022 and newer (2022-2024 -> net48, 2025+ -> .NET 8).
@@ -117,15 +136,25 @@ where dotnet >nul 2>&1
 if errorlevel 1 goto :no_dotnet
 
 echo       Compiling Revit add-in (1-2 minutes per installed version)...
+REM Try the NuGet route first: it does not need the .NET Framework 4.8
+REM Developer Pack, which is the #1 reason the build fails on a fresh machine
+REM (error MSB3644: reference assemblies for .NETFramework,Version=v4.8 not found).
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-addin.ps1" -UseNuget -Deploy
+if not errorlevel 1 goto :addin_compiled
+echo.
+echo       NuGet route failed. Retrying with the local Revit API DLLs...
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-addin.ps1" -Deploy
-if errorlevel 1 goto :addin_fail
+if not errorlevel 1 goto :addin_compiled
+goto :addin_fail
+
+:addin_compiled
 echo [3/6] Add-in compiled and deployed
 goto :addin_done
 
 :no_revit
 echo [3/6] No Revit 2022+ found - skipping add-in
 echo       Everything except "write into Revit" still works.
-echo       Try it now:  .venv\Scripts\python -m revit_wy.cli demo
+echo       Try it now:  ".venv\Scripts\python.exe" -m revit_wy.cli demo
 goto :addin_done
 
 :no_dotnet
@@ -135,8 +164,25 @@ goto :addin_done
 
 :addin_fail
 echo [3/6] Add-in build failed - other features unaffected
-echo       Run scripts\build-addin.ps1 in PowerShell to see the full error
+echo.
+echo   The usual cause is a missing .NET Framework 4.8 reference assemblies
+echo   pack (error MSB3644). Pick ONE of these:
+echo     1) Install .NET Framework 4.8 Developer Pack (small, ~70 MB)
+echo        https://dotnet.microsoft.com/download/dotnet-framework/net48
+echo     2) Install Visual Studio Build Tools with ".NET Framework 4.8
+echo        targeting pack" checked
+echo     3) Skip Revit 2022-2024 and build for 2025+ only:
+echo        powershell -File scripts\build-addin.ps1 -RevitVersions 2025 -UseNuget -Deploy
+echo   Everything except "write into Revit" keeps working either way.
 goto :addin_done
+
+:selfcheck_bad
+echo.
+echo [X] Self-check found problems that must be fixed first (see the list above).
+echo     Nothing else was started - better than a half-working setup.
+echo.
+pause
+exit /b 2
 
 :addin_done
 
@@ -166,9 +212,14 @@ echo   Close this window to stop the server.
 echo -----------------------------------------------------------
 echo.
 
-start "" /b cmd /c "timeout /t 3 >nul & start http://127.0.0.1:8770/"
+REM Port 8770 may already be taken by a previous run; tell the user instead of a wall of traceback.
+"%VPY%" -c "import socket,sys;s=socket.socket();r=s.connect_ex(('127.0.0.1',8770));s.close();sys.exit(r)"
+if not errorlevel 1 goto :port_busy
 
-if exist "%~dp0samples\arch_plan.dxf" (
+REM Open the browser from Python, 2s later, so it only happens after the port is up.
+start "" /b "%VPY%" -c "import time,webbrowser;time.sleep(2);webbrowser.open('http://127.0.0.1:8770/')"
+
+if exist "%ROOT%\samples\arch_plan.dxf" (
     "%VPY%" "%ROOT%\tools\viewer\server.py" "%ROOT%\samples\arch_plan.dxf" --host 127.0.0.1 --port 8770
 ) else (
     "%VPY%" "%ROOT%\tools\viewer\server.py" --host 127.0.0.1 --port 8770
@@ -177,3 +228,11 @@ if exist "%~dp0samples\arch_plan.dxf" (
 echo.
 echo Workspace stopped.
 pause
+
+:port_busy
+echo.
+echo [X] Port 8770 is already in use - maybe another copy of this window is running.
+echo     Close it, or open http://127.0.0.1:8770/ directly to see if it is the workspace.
+echo.
+pause
+exit /b 0
