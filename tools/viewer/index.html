@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>revit-wy ｜ 数模对照预览</title>
+<style>
+  :root{
+    --bg:#12151a; --panel:#1a1f27; --panel2:#222834; --line:#2f3745;
+    --text:#e4e8ef; --dim:#8b95a5; --accent:#4da3ff;
+    --ok:#3ecf8e; --warn:#f5a623; --err:#f05a5a; --isolate:#6b7686;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--text);
+    font:13px/1.5 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    display:flex;flex-direction:column;overflow:hidden}
+
+  header{display:flex;align-items:center;gap:12px;padding:10px 14px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:none}
+  header h1{font-size:14px;margin:0;font-weight:600;letter-spacing:.3px}
+  header h1 span{color:var(--accent)}
+  .grow{flex:1}
+  input[type=text],select{background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);padding:5px 9px;border-radius:5px;font-size:12px;outline:none}
+  input[type=text]:focus,select:focus{border-color:var(--accent)}
+  input[type=text]{width:330px}
+  button{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:5px 11px;border-radius:5px;cursor:pointer;font-size:12px}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#08121e;font-weight:600}
+  button.primary:hover{filter:brightness(1.1)}
+
+  main{flex:1;display:flex;min-height:0}
+  #stage{flex:1;position:relative;background:#0d1015;min-width:0}
+  canvas{display:block;width:100%;height:100%;cursor:grab}
+  canvas.drag{cursor:grabbing}
+
+  #hud{position:absolute;left:12px;bottom:12px;background:rgba(18,21,26,.88);
+    border:1px solid var(--line);border-radius:6px;padding:7px 10px;
+    font-size:11px;color:var(--dim);pointer-events:none;line-height:1.7}
+  #hud b{color:var(--text);font-weight:600}
+  #legend{position:absolute;right:12px;top:12px;background:rgba(18,21,26,.88);
+    border:1px solid var(--line);border-radius:6px;padding:9px 11px;font-size:11px}
+  #legend div{display:flex;align-items:center;gap:7px;margin:3px 0;color:var(--dim)}
+  #legend i{width:11px;height:11px;border-radius:2px;display:inline-block}
+
+  aside{width:390px;flex:none;background:var(--panel);border-left:1px solid var(--line);
+    display:flex;flex-direction:column;min-height:0}
+  .tabs{display:flex;border-bottom:1px solid var(--line);flex:none}
+  .tabs button{flex:1;border:0;border-radius:0;padding:9px 0;background:transparent;
+    color:var(--dim);border-bottom:2px solid transparent}
+  .tabs button.on{color:var(--accent);border-bottom-color:var(--accent);background:var(--panel2)}
+  .pane{flex:1;overflow:auto;padding:10px;display:none}
+  .pane.on{display:block}
+
+  .stat{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px}
+  .stat div{background:var(--panel2);border-radius:5px;padding:7px 6px;text-align:center}
+  .stat b{display:block;font-size:15px;color:var(--accent)}
+  .stat span{font-size:10px;color:var(--dim)}
+
+  .layer{border:1px solid var(--line);border-radius:6px;margin-bottom:6px;
+    padding:7px 9px;background:var(--panel2);transition:.12s}
+  .layer:hover{border-color:#3d4759}
+  .layer.review{border-color:var(--warn);background:rgba(245,166,35,.07)}
+  .layer .top{display:flex;align-items:center;gap:7px}
+  .layer .nm{font-weight:600;font-size:12px;flex:1;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .layer .cnt{font-size:10px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .layer .meta{font-size:10px;color:var(--dim);margin-top:3px;
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .layer select{font-size:11px;padding:2px 4px;flex:none}
+  .dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .bar{height:3px;border-radius:2px;background:#333c4a;margin-top:5px;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:2px}
+  .hidden{opacity:.35}
+
+  .rule{background:var(--panel2);border-radius:5px;padding:8px;margin-bottom:6px}
+  .rule label{display:block;font-size:11px;color:var(--dim);margin-bottom:3px}
+  .rule input{width:100%}
+  .hint{font-size:11px;color:var(--dim);line-height:1.7;margin:8px 0}
+  code{background:#0f1319;padding:1px 4px;border-radius:3px;font-size:11px;color:#8fd3ff}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+    background:#243044;border:1px solid var(--accent);color:var(--text);
+    padding:9px 16px;border-radius:6px;font-size:12px;opacity:0;
+    transition:.25s;pointer-events:none;max-width:70vw}
+  .toast.on{opacity:1;bottom:36px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>revit-wy <span>数模对照</span></h1>
+  <input id="dxf" type="text" placeholder="DXF 路径，例如 samples/arch_plan.dxf">
+  <select id="profile">
+    <option value="arch">建筑</option>
+    <option value="struct">结构</option>
+    <option value="mep">机电</option>
+  </select>
+  <button id="load" class="primary">加载</button>
+  <div class="grow"></div>
+  <button id="fit">适应窗口</button>
+  <button id="toggleGeo">只看识别结果</button>
+  <button id="mode">视图：CAD 原图</button>
+</header>
+
+<main>
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      滚轮缩放 · 拖拽平移 · 滚轮按下拖拽整体<br>
+      <b id="hud-info">未加载图纸</b>
+    </div>
+    <div id="legend">
+      <div><i style="background:#e4e8ef"></i>原图几何</div>
+      <div><i style="background:#3ecf8e"></i>识别为构件</div>
+      <div><i style="background:#f5a623"></i>待确认</div>
+      <div><i style="background:#6b7686"></i>隔离/忽略</div>
+    </div>
+  </div>
+
+  <aside>
+    <div class="tabs">
+      <button class="on" data-pane="layers">图层对照</button>
+      <button data-pane="result">识别结果</button>
+      <button data-pane="rules">建模规则</button>
+    </div>
+
+    <div class="pane on" id="pane-layers">
+      <div class="stat" id="stats"></div>
+      <div class="hint">点图层右侧下拉直接改归属，改完点<b>应用并重算</b>。确认结果会写入别名库，下次自动命中。</div>
+      <div id="layers"></div>
+      <button id="apply" class="primary" style="width:100%;margin-top:8px">应用并重算</button>
+    </div>
+
+    <div class="pane" id="pane-result">
+      <div id="result"></div>
+    </div>
+
+    <div class="pane" id="pane-rules">
+      <div class="hint">改完点<b>应用规则</b>会立即重算识别结果。用于试参数，满意后再写回 <code>default.yaml</code>。</div>
+
+      <div class="rule"><label>层高 story_height_mm（影响墙高/标高）</label>
+        <input id="r-story" type="text" value="3000"></div>
+      <div class="rule"><label>墙默认厚度 fallback_thickness_mm</label>
+        <input id="r-wall" type="text" value="200"></div>
+      <div class="rule"><label>墙厚对齐 granularity（thickness_round_mm）</label>
+        <input id="r-round" type="text" value="10"></div>
+      <div class="rule"><label>板默认厚度 default_thickness_mm</label>
+        <input id="r-slab" type="text" value="120"></div>
+      <div class="rule"><label>门默认尺寸 宽×高（mm）</label>
+        <input id="r-door" type="text" value="900x2100"></div>
+      <div class="rule"><label>窗默认尺寸 宽×高（mm）</label>
+        <input id="r-window" type="text" value="1500x1500"></div>
+      <button id="applyRules" class="primary" style="width:100%;margin-top:8px">应用规则</button>
+    </div>
+  </aside>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+// ============================ 状态 ============================
+const S = {
+  preview: null,
+  ir: null,
+  decisions: {},       // layer -> 新归属
+  hidden: new Set(),   // 隐藏的图层名
+  showGeo: true,
+  viewMode: "cad",     // cad | result | both
+  cam: {x: 0, y: 0, s: 1},
+  hover: null,
+};
+
+const COLORS = {
+  build: "#3ecf8e",
+  manual_review: "#f5a623",
+  isolate: "#6b7686",
+  ignore: "#4a5262",
+};
+const PALETTE = ["#4da3ff","#a78bfa","#f472b6","#34d399","#fbbf24",
+                 "#22d3ee","#fb923c","#c084fc","#4ade80","#60a5fa"];
+const COMP_CN = {wall:"墙",column:"柱",beam:"梁",door:"门",window:"窗",
+                 slab:"楼板",grid:"轴网",annotation:"标注",hatch:"填充",
+                 furniture:"家具",ignored:"忽略",manual_review:"待确认",
+                 isolate:"隔离",pipe:"水管",duct:"风管",cable_tray:"桥架",
+                 equipment:"设备",room_boundary:"房间"};
+
+const cv = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+
+// ============================ 工具 ============================
+function toast(msg, ms = 2200) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("on");
+  clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("on"), ms);
+}
+function colorOf(layer) {
+  const comp = layer.component || "manual_review";
+  if (S.preview && S.preview.layers) {
+    const idx = S.preview.layers.findIndex(l => l.name === layer.name);
+    if (idx >= 0) return PALETTE[idx % PALETTE.length];
+  }
+  return COLORS[layer.action] || "#888";
+}
+function actionColor(a) { return COLORS[a] || "#888"; }
+
+function resize() {
+  const r = cv.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr);
+  cv.height = Math.round(r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  draw();
+}
+window.addEventListener("resize", resize);
+
+// ============================ 相机 ============================
+function worldToScreen(x, y) {
+  const {x: cx, y: cy, s} = S.cam;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  return [w / 2 + (x - cx) * s, h / 2 - (y - cy) * s];
+}
+function screenToWorld(sx, sy) {
+  const {x: cx, y: cy, s} = S.cam;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  return [(sx - w / 2) / s + cx, -(sy - h / 2) / s + cy];
+}
+function fitView() {
+  const bb = S.preview && S.preview.bbox_mm;
+  if (!bb || (bb[2] - bb[0] <= 0 && bb[3] - bb[1] <= 0)) return;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  const bw = Math.max(bb[2] - bb[0], 1), bh = Math.max(bb[3] - bb[1], 1);
+  S.cam.s = Math.min(w / bw, h / bh) * 0.9;
+  S.cam.x = (bb[0] + bb[2]) / 2;
+  S.cam.y = (bb[1] + bb[3]) / 2;
+  draw();
+}
+
+// ============================ 绘制 ============================
+function draw() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.fillStyle = "#0d1015";
+  ctx.fillRect(0, 0, w, h);
+  if (!S.preview) { drawEmpty(); return; }
+
+  const s = S.cam.s;
+  // ---- 1) 原图几何 ----
+  if (S.showGeo) {
+    for (const L of S.preview.layers) {
+      if (S.hidden.has(L.name)) continue;
+      const isBuild = L.action === "build";
+      // CAD 原图模式下，非建模层用暗灰，建模层用亮色；识别模式只画高亮
+      if (S.viewMode === "result" && !isBuild) continue;
+
+      ctx.lineWidth = isBuild ? Math.max(0.7, Math.min(2.2, s * 60)) : 0.6;
+      ctx.strokeStyle = S.viewMode === "cad"
+        ? (isBuild ? "#c9d3e0" : "rgba(110,122,140,.35)")
+        : "rgba(120,135,155,.20)";
+      ctx.beginPath();
+      for (const sg of L.segs) {
+        const [x1, y1] = worldToScreen(sg[0], sg[1]);
+        const [x2, y2] = worldToScreen(sg[2], sg[3]);
+        // 视口裁剪
+        if ((x1 < -50 && x2 < -50) || (x1 > w + 50 && x2 > w + 50)) continue;
+        if ((y1 < -50 && y2 < -50) || (y1 > h + 50 && y2 > h + 50)) continue;
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      }
+      ctx.stroke();
+
+      if (s > 0.02) {
+        for (const c of L.circles) {
+          const [cx, cy] = worldToScreen(c[0], c[1]);
+          if (cx < -100 || cy < -100 || cx > w + 100 || cy > h + 100) continue;
+          ctx.beginPath();
+          ctx.arc(cx, cy, Math.max(0.5, c[2] * s), 0, Math.PI * 2);
+          ctx.strokeStyle = ctx.strokeStyle;
+          ctx.stroke();
+        }
+        for (const p of L.inserts) {
+          const [px, py] = worldToScreen(p[0], p[1]);
+          if (px < -20 || py < -20 || px > w + 20 || py > h + 20) continue;
+          ctx.fillStyle = isBuild ? "rgba(77,163,255,.75)" : "rgba(110,122,140,.5)";
+          ctx.fillRect(px - 1.6, py - 1.6, 3.2, 3.2);
+        }
+      }
+    }
+  }
+
+  // ---- 2) 识别结果叠加 ----
+  if (S.ir && (S.viewMode !== "cad")) drawRecognized();
+
+  drawHover();
+}
+
+function drawEmpty() {
+  const w = cv.clientWidth, h = cv.clientHeight;
+  ctx.fillStyle = "#5a6474";
+  ctx.font = "13px -apple-system, 'Microsoft YaHei', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("输入 DXF 路径后点「加载」，或直接访问 /?dxf=samples/arch_plan.dxf", w / 2, h / 2);
+  ctx.textAlign = "left";
+}
+
+function drawRecognized() {
+  const P = S.ir.preview;
+  const s = S.cam.s;
+
+  // 楼板：半透明填充
+  for (const poly of P.slabs) {
+    ctx.beginPath();
+    poly.forEach(([x, y], i) => {
+      const [px, py] = worldToScreen(x, y);
+      i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+    });
+    ctx.closePath();
+    ctx.fillStyle = "rgba(77,163,255,.10)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(77,163,255,.55)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // 轴网：青色虚线
+  ctx.save();
+  ctx.setLineDash([7, 5]);
+  ctx.strokeStyle = "rgba(34,211,238,.75)";
+  ctx.lineWidth = 1;
+  for (const g of P.grids) {
+    const [x1, y1] = worldToScreen(g[0], g[1]);
+    const [x2, y2] = worldToScreen(g[2], g[3]);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  ctx.restore();
+
+  // 墙：按厚度画带宽度的线
+  ctx.lineCap = "butt";
+  for (const [x1, y1, x2, y2, th] of P.walls) {
+    const [ax, ay] = worldToScreen(x1, y1);
+    const [bx, by] = worldToScreen(x2, y2);
+    ctx.beginPath();
+    ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.lineWidth = Math.max(1.5, th * s);
+    ctx.strokeStyle = "rgba(62,207,142,.55)";
+    ctx.stroke();
+    ctx.lineWidth = Math.max(0.8, 1);
+    ctx.strokeStyle = "rgba(62,207,142,.95)";
+    ctx.stroke();
+  }
+  ctx.lineCap = "butt";
+
+  // 梁
+  for (const [x1, y1, x2, y2, b] of P.beams) {
+    const [ax, ay] = worldToScreen(x1, y1);
+    const [bx, by] = worldToScreen(x2, y2);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+    ctx.lineWidth = Math.max(1.2, b * s);
+    ctx.strokeStyle = "rgba(192,132,252,.75)";
+    ctx.stroke();
+  }
+
+  // 柱：矩形按旋转角
+  for (const [cx, cy, b, hh, rot] of P.columns) {
+    const [px, py] = worldToScreen(cx, cy);
+    const w2 = b * s, h2 = hh * s;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(-rot * Math.PI / 180);
+    ctx.strokeStyle = "#a78bfa";
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(-w2 / 2, -h2 / 2, w2, h2);
+    ctx.fillStyle = "rgba(167,139,250,.18)";
+    ctx.fillRect(-w2 / 2, -h2 / 2, w2, h2);
+    ctx.restore();
+  }
+
+  // 门窗：方块 + 半径
+  for (const [cx, cy, wd, kind] of P.openings) {
+    const [px, py] = worldToScreen(cx, cy);
+    const r = Math.max(3, wd * s / 2);
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fillStyle = kind === "door" ? "rgba(251,146,60,.85)" : "rgba(244,114,182,.85)";
+    ctx.fill();
+  }
+}
+
+function drawHover() {
+  if (!S.hover) return;
+  const L = S.hover;
+  const [px, py] = worldToScreen(L._ax, L._ay);
+  ctx.beginPath();
+  ctx.arc(px, py, 5, 0, Math.PI * 2);
+  ctx.strokeStyle = "#fff";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// ============================ 交互 ============================
+let dragging = false, lastX = 0, lastY = 0;
+cv.addEventListener("mousedown", e => {
+  dragging = true; cv.classList.add("drag");
+  lastX = e.clientX; lastY = e.clientY;
+});
+window.addEventListener("mouseup", () => {
+  dragging = false; cv.classList.remove("drag");
+});
+window.addEventListener("mousemove", e => {
+  if (dragging) {
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    lastX = e.clientX; lastY = e.clientY;
+    S.cam.x -= dx / S.cam.s;
+    S.cam.y += dy / S.cam.s;
+    draw();
+  }
+});
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const rect = cv.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const [wx, wy] = screenToWorld(mx, my);
+  const k = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+  S.cam.s *= k;
+  const [nx, ny] = screenToWorld(mx, my);
+  S.cam.x += wx - nx;
+  S.cam.y += wy - ny;
+  draw();
+}, {passive: false});
+
+// ============================ 数据加载 ============================
+async function loadDrawing(dxf, profile) {
+  try {
+    const r = await fetch("/api/load", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({dxf, profile}),
+    });
+    const d = await r.json();
+    if (!d.ok) { toast("加载失败：" + (d.error || "未知错误"), 5000); return; }
+    await refreshAll();
+    fitView();
+    toast(`已加载 ${dxf} ｜ 墙 ${d.counts.walls} · 柱 ${d.counts.columns} · 门 ${d.counts.doors} · 窗 ${d.counts.windows}`);
+  } catch (e) {
+    toast("请求失败：" + e.message, 5000);
+  }
+}
+
+async function refreshAll() {
+  const p = await (await fetch("/api/preview")).json();
+  if (!p.ok) { toast(p.error, 4000); return; }
+  S.preview = p;
+  const ir = await (await fetch("/api/ir")).json();
+  S.ir = ir.ok ? ir : null;
+  renderLayers();
+  renderResult();
+  draw();
+  updateHud();
+}
+
+function updateHud() {
+  const el = document.getElementById("hud-info");
+  if (!S.preview) { el.textContent = "未加载图纸"; return; }
+  const bb = S.preview.bbox_mm;
+  const segs = S.preview.segments_drawn;
+  el.innerHTML = `<b>${S.preview.path.split(/[\\/]/).pop()}</b> ｜ `
+    + `图幅 ${((bb[2]-bb[0])/1000).toFixed(1)}×${((bb[3]-bb[1])/1000).toFixed(1)} m ｜ `
+    + `${S.preview.layers.length} 图层 ｜ 绘制 ${segs} 段`
+    + (S.preview.truncated ? " <span style='color:#f5a623'>（已限流）</span>" : "");
+}
+
+// ============================ 图层列表 ============================
+function renderLayers() {
+  const wrap = document.getElementById("layers");
+  const p = S.preview;
+  if (!p) { wrap.innerHTML = ""; return; }
+
+  const acts = {};
+  for (const L of p.layers) acts[L.action] = (acts[L.action] || 0) + 1;
+  document.getElementById("stats").innerHTML = `
+    <div><b>${p.layers.length}</b><span>图层</span></div>
+    <div><b style="color:#3ecf8e">${acts.build || 0}</b><span>建模</span></div>
+    <div><b style="color:#f5a623">${acts.manual_review || 0}</b><span>待确认</span></div>
+    <div><b style="color:#6b7686">${(acts.isolate || 0) + (acts.ignore || 0)}</b><span>隔离/忽略</span></div>`;
+
+  const opts = ["wall","column","beam","door","window","slab","grid",
+                "isolate","ignore","manual_review"];
+  wrap.innerHTML = "";
+  for (const L of p.layers) {
+    const cur = S.decisions[L.name] || L.component || "manual_review";
+    const conf = Math.round(L.confidence * 100);
+    const col = actionColor(L.action);
+    const div = document.createElement("div");
+    div.className = "layer" + (L.action === "manual_review" ? " review" : "")
+      + (S.hidden.has(L.name) ? " hidden" : "");
+    div.innerHTML = `
+      <div class="top">
+        <span class="dot" style="background:${col}"></span>
+        <span class="nm" title="${escapeHtml(L.name)}">${escapeHtml(L.name)}</span>
+        <span class="cnt">${L.entity_count}</span>
+      </div>
+      <div class="meta">
+        <span style="color:${col}">${COMP_CN[L.component] || L.component || "未识别"}</span>
+        <span>置信 ${conf}%</span>
+        <span>${L.matched_by}</span>
+        <select data-layer="${escapeHtml(L.name)}">
+          ${opts.map(o => `<option value="${o}" ${o === cur ? "selected" : ""}>${COMP_CN[o] || o}</option>`).join("")}
+        </select>
+      </div>
+      <div class="bar"><i style="width:${conf}%;background:${col}"></i></div>`;
+    div.querySelector("select").addEventListener("change", ev => {
+      S.decisions[L.name] = ev.target.value;
+      ev.stopPropagation();
+    });
+    div.addEventListener("click", ev => {
+      if (ev.target.tagName === "SELECT") return;
+      // 点图层切换隐藏
+      S.hidden.has(L.name) ? S.hidden.delete(L.name) : S.hidden.add(L.name);
+      renderLayers(); draw();
+    });
+    wrap.appendChild(div);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+
+// ============================ 结果 ============================
+function renderResult() {
+  const el = document.getElementById("result");
+  if (!S.ir) { el.innerHTML = "<div class='hint'>尚未构建识别结果。</div>"; return; }
+  const c = S.ir.counts, P = S.ir.preview;
+  const rows = [
+    ["标高", c.levels, "IR 中的楼层，Revit 侧按此创建"],
+    ["轴网", c.grids, "长直线聚类 + 轴号文字"],
+    ["墙", c.walls, "双线配对求厚度，单线靠图层后缀"],
+    ["柱", c.columns, "闭合轮廓最小外接矩形"],
+    ["梁", c.beams, "双线取宽 / 默认截面"],
+    ["门", c.doors, "块名判门窗，需宿主墙"],
+    ["窗", c.windows, "块名判门窗，需宿主墙"],
+    ["楼板", c.slabs, "闭合轮廓 + 面积过滤"],
+  ];
+  el.innerHTML = `<div class="stat" style="grid-template-columns:repeat(2,1fr)">
+      ${rows.slice(2, 6).map(r => `<div><b>${r[1]}</b><span>${r[0]}</span></div>`).join("")}
+    </div>` +
+    rows.map(r => `<div class="rule" style="display:flex;justify-content:space-between;align-items:center">
+        <div><b>${r[0]}</b> <span style="color:#8b95a5;font-size:11px">${r[2]}</span></div>
+        <b style="color:#4da3ff;font-size:14px">${r[1]}</b></div>`).join("")
+    + `<div class="hint" style="margin-top:10px">
+        墙来自双线配对：<b>${P.walls.length}</b> 面<br>
+        门窗已挂墙：<b>${P.openings.length}</b> 个<br>
+        <span style="color:#8b95a5">数字为 0 时，先看「图层对照」里对应图层是否被判成了隔离。</span>
+      </div>`;
+}
+
+// ============================ 事件绑定 ============================
+document.getElementById("load").addEventListener("click", () => {
+  const dxf = document.getElementById("dxf").value.trim();
+  const profile = document.getElementById("profile").value;
+  if (!dxf) { toast("请填写 DXF 路径"); return; }
+  S.decisions = {}; S.hidden.clear();
+  loadDrawing(dxf, profile);
+});
+document.getElementById("dxf").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("load").click();
+});
+
+document.getElementById("fit").addEventListener("click", fitView);
+
+document.getElementById("toggleGeo").addEventListener("click", e => {
+  S.showGeo = !S.showGeo;
+  e.target.textContent = S.showGeo ? "只看识别结果" : "显示 CAD 原图";
+  draw();
+});
+
+document.getElementById("mode").addEventListener("click", e => {
+  // cad -> both -> result -> cad
+  const order = ["cad", "both", "result"];
+  const label = {cad: "CAD 原图", both: "原图+识别", result: "仅识别"};
+  S.viewMode = order[(order.indexOf(S.viewMode) + 1) % order.length];
+  e.target.textContent = "视图：" + label[S.viewMode];
+  if (S.viewMode === "result") S.showGeo = true;
+  draw();
+});
+
+document.getElementById("apply").addEventListener("click", async () => {
+  if (!Object.keys(S.decisions).length) { toast("没有改动"); return; }
+  const r = await fetch("/api/confirm", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({decisions: S.decisions}),
+  });
+  const d = await r.json();
+  if (!d.ok) { toast("应用失败：" + d.error, 5000); return; }
+  S.decisions = {};
+  await refreshAll();
+  toast("已应用并重算，结果已写入别名库");
+});
+
+document.getElementById("applyRules").addEventListener("click", async () => {
+  const num = id => parseFloat(document.getElementById(id).value) || undefined;
+  const pair = id => {
+    const v = document.getElementById(id).value.split("x");
+    return [parseFloat(v[0]) || 900, parseFloat(v[1]) || 2100];
+  };
+  const [dw, dh] = pair("r-door");
+  const [ww, wh] = pair("r-window");
+  const overrides = {
+    levels: {story_height_mm: num("r-story")},
+    wall: {fallback_thickness_mm: num("r-wall"), thickness_round_mm: num("r-round")},
+    slab: {default_thickness_mm: num("r-slab")},
+    door: {default_width_mm: dw, default_height_mm: dh},
+    window: {default_width_mm: ww, default_height_mm: wh},
+  };
+  const r = await fetch("/api/rules", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({overrides}),
+  });
+  const d = await r.json();
+  if (!d.ok) { toast("应用失败：" + d.error, 5000); return; }
+  await refreshAll();
+  toast("规则已应用并重算");
+});
+
+document.querySelectorAll(".tabs button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll(".tabs button").forEach(x => x.classList.remove("on"));
+    document.querySelectorAll(".pane").forEach(x => x.classList.remove("on"));
+    b.classList.add("on");
+    document.getElementById("pane-" + b.dataset.pane).classList.add("on");
+  });
+});
+
+// ============================ 启动 ============================
+(async function init() {
+  resize();
+  const q = new URLSearchParams(location.search);
+  let dxf = q.get("dxf");
+  if (!dxf) {
+    const s = await (await fetch("/api/samples")).json();
+    if (s.ok && s.samples.length) dxf = s.samples[0];
+  }
+  if (dxf) {
+    document.getElementById("dxf").value = dxf;
+    document.getElementById("profile").value = q.get("profile") || "arch";
+    await loadDrawing(dxf, document.getElementById("profile").value);
+  }
+})();
+</script>
+</body>
+</html>

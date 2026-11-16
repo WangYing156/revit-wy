@@ -8,6 +8,26 @@ using Autodesk.Revit.UI;
 
 namespace RevitWy.Plugin.Commands
 {
+    /// <summary>打开停靠面板。TransactionMode.ReadOnly 足够——面板本身不做写操作，
+    /// 写操作走按钮回调里各自的事务。</summary>
+    [Transaction(TransactionMode.ReadOnly)]
+    public class CmdShowPane : IExternalCommand
+    {
+        public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
+        {
+            try
+            {
+                WyApp.ShowPane(commandData.Application);
+                return Result.Succeeded;
+            }
+            catch (Exception ex)
+            {
+                message = ex.Message;
+                return Result.Failed;
+            }
+        }
+    }
+
     [Transaction(TransactionMode.ReadOnly)]
     public class CmdInfo : IExternalCommand
     {

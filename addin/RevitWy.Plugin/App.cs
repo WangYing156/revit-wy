@@ -8,6 +8,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using Autodesk.Revit.UI;
+using Autodesk.Revit.UI.Events;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -44,6 +45,12 @@ namespace RevitWy.Plugin
             catch { }
         }
 
+        /// <summary>停靠面板唯一 Id。改它等于换一个新的面板实例。</summary>
+        public static readonly DockablePaneId PaneId =
+            new DockablePaneId(new Guid("D4B1E7A2-6C3F-4E8B-9A21-7F5C0D3B4E19"));
+
+        public static RevitWy.Plugin.UI.WyDockablePane Pane { get; private set; }
+
         public Result OnStartup(UIControlledApplication app)
         {
             try
@@ -70,6 +77,7 @@ namespace RevitWy.Plugin
                     });
                 _server.Start();
 
+                RegisterDockablePane(app);
                 BuildRibbon(app);
                 Log("监听 127.0.0.1:" + _config.Port + " 成功");
                 return Result.Succeeded;
@@ -94,6 +102,42 @@ namespace RevitWy.Plugin
             return Result.Succeeded;
         }
 
+        // ---------------------------------------------------------- 停靠面板
+        /// <summary>
+        /// 注册停靠面板。要点：
+        ///  · 只在 OnStartup 注册一次，不可重复注册（重复会抛异常）
+        ///  · RegisterDockablePane 之后不会自动显示，需要用户在功能区点按钮 Show()
+        ///  · 实例必须被静态持有，否则被 GC 后面板变空白
+        /// </summary>
+        private void RegisterDockablePane(UIControlledApplication app)
+        {
+            try
+            {
+                Pane = new RevitWy.Plugin.UI.WyDockablePane();
+                app.RegisterDockablePane(PaneId, "revit-wy 翻模", Pane);
+                Log("停靠面板已注册");
+            }
+            catch (Exception ex)
+            {
+                Log("注册停靠面板失败: " + ex);
+            }
+        }
+
+        /// <summary>显示面板（需要 UIApplication）。</summary>
+        public static void ShowPane(UIApplication uiApp)
+        {
+            try
+            {
+                if (Pane != null && uiApp != null) Pane.Attach(uiApp);
+                var dp = uiApp.GetDockablePane(PaneId);
+                if (dp != null) dp.Show();
+            }
+            catch (Exception ex)
+            {
+                Log("显示停靠面板失败: " + ex.Message);
+            }
+        }
+
         // ---------------------------------------------------------- Ribbon
         private void BuildRibbon(UIControlledApplication app)
         {
@@ -102,6 +146,12 @@ namespace RevitWy.Plugin
 
             var panel = app.CreateRibbonPanel(tab, "一键翻模");
             var asmPath = Assembly.GetExecutingAssembly().Location;
+
+            var paneBtn = new PushButtonData("WyPane", "翻模面板",
+                asmPath, "RevitWy.Plugin.Commands.CmdShowPane");
+            paneBtn.ToolTip = "打开停靠面板：查看图层对照、逐条确认归属、清理上次翻模";
+            panel.AddItem(paneBtn);
+            panel.AddSeparator();
 
             var infoBtn = new PushButtonData("WyInfo", "连接状态",
                 asmPath, "RevitWy.Plugin.Commands.CmdInfo");

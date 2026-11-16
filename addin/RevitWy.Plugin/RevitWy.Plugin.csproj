@@ -24,6 +24,9 @@
     <NoWarn>MSB3277</NoWarn>
     <!-- 供 NuGet 的 Revit API 包使用的版本号 -->
     <RevitVersion>2022</RevitVersion>
+    <!-- 停靠面板需要 WPF + WinForms（TaskDialog/文件夹对话框会用到） -->
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 
   <!-- Revit 2022 API 引用方式二选一 -->

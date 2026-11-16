@@ -71,6 +71,7 @@ revit-wy/
 │   ├── mcp_server.py              MCP 服务（12 个工具）
 │   └── cli.py                     命令行
 ├── addin/RevitWy.Plugin/          Revit 2022 C# 插件（net48）
+│   ├── UI/                         停靠面板（WPF）+ 后端适配层
 │   ├── Core/                       TCP 服务 + ExternalEvent 桥
 │   ├── Model/                      IR 模型 + 类型三级兜底
 │   ├── Builders/                   标高/轴网/柱/墙/梁/门窗/板 + 编排器
@@ -80,13 +81,31 @@ revit-wy/
 │   └── bim_rules/default.yaml     内置建模规则默认值
 ├── clients/                       Cursor / WorkBuddy 配置样例
 ├── scripts/                       install.ps1 / build-addin.ps1
-├── tools/mock_revit.py            协议仿真（无 Revit 也能测链路）
+├── tools/
+│   ├── mock_revit.py              协议仿真（无 Revit 也能测链路）
+│   └── viewer/                    数模对照可视化预览（Canvas，零依赖）
 ├── tests/                         33 个测试
 ├── samples/                       自动生成的样例图纸
 └── docs/                          方案与开发文档
 ```
 
 ---
+
+## 可视化界面
+
+两种载体，按场景选（详见 [docs/06-可视化界面选型与实现.md](docs/06-可视化界面选型与实现.md)）：
+
+```powershell
+# 场景 1：改图纸/调规则时，浏览器里秒级看识别结果
+revit-wy panel samples\arch_plan.dxf     # → http://127.0.0.1:8770/
+```
+
+**场景 2**：Revit 2022 停靠面板（功能区 → `revit-wy` → `翻模面板`），
+纯 WPF 实现，可列图层、改归属、应用到 Revit、清理上次翻模、在三维视图高亮构件。
+
+> 为什么**不**用 WebView2 嵌网页：Revit 里 WebView2 有 4 条已知崩溃路径
+> （关闭 Revit 抛异常、LoadFamily 后永久失效、airspace 空白、DLL 版本冲突），
+> 而面板需求纯 WPF 完全覆盖。这是主动权衡，不是能力不足。
 
 ## 文档
 
@@ -97,6 +116,7 @@ revit-wy/
 | [docs/03-Revit-2022-插件开发说明.md](docs/03-Revit-2022-插件开发说明.md) | 线程模型、事务策略、Revit 2022 专有坑 |
 | [docs/04-MCP-接入指南.md](docs/04-MCP-接入指南.md) | Cursor / WorkBuddy 配置、对话脚本 |
 | [docs/05-踩坑与排错.md](docs/05-踩坑与排错.md) | 错误码、排错决策树、已修问题清单 |
+| [docs/06-可视化界面选型与实现.md](docs/06-可视化界面选型与实现.md) | 四种载体对比、WebView2 为何不用、面板实现 |
 
 ---
 

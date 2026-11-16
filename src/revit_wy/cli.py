@@ -190,6 +190,21 @@ def cmd_build(args) -> int:
 
 
 # ------------------------------------------------------------------ status
+def cmd_panel(args) -> int:
+    """启动本地预览服务。Revit 停靠面板会连这个端口取图层对照单。"""
+    import runpy
+    viewer = Path(__file__).resolve().parent.parent.parent / "tools" / "viewer" / "server.py"
+    if not viewer.exists():
+        print(_c("err", f"找不到预览服务: {viewer}"))
+        return 1
+    sys.argv = [str(viewer), args.path, "--host", args.host,
+                "--port", str(args.port), "--profile", args.profile]
+    print(_c("h", f"\n  预览服务  http://127.0.0.1:{args.port}/"))
+    print(_c("dim", f"  Revit 停靠面板默认连 127.0.0.1:{args.port}（WyBackend.ViewerPort）\n"))
+    runpy.run_path(str(viewer), run_name="__main__")
+    return 0
+
+
 def cmd_status(args) -> int:
     _print(probe(args.host, args.port))
     return 0
@@ -247,6 +262,13 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--host", default="127.0.0.1")
     b.add_argument("--port", type=int, default=48880)
     b.set_defaults(func=cmd_build)
+
+    pv = sub.add_parser("panel", help="启动数模对照可视化预览（供 Revit 停靠面板/浏览器共用）")
+    pv.add_argument("path", nargs="?", default="", help="DXF 路径，可留空在页面里选")
+    pv.add_argument("-p", "--profile", default="arch", choices=["arch", "struct", "mep"])
+    pv.add_argument("--host", default="0.0.0.0")
+    pv.add_argument("--port", type=int, default=8770)
+    pv.set_defaults(func=cmd_panel)
 
     st = sub.add_parser("status", help="Revit 插件状态")
     st.add_argument("--host", default="127.0.0.1")
