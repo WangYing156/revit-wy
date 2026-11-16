@@ -1,5 +1,5 @@
 // RevitWy.Plugin — 协议层：与 Python MCP Server 之间的 NDJSON 消息定义
-// 目标框架：.NET Framework 4.8 / Revit 2022
+// 目标框架：Revit 2022+（2022-2024 → net48；2025+ → net8.0-windows）
 using System;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;

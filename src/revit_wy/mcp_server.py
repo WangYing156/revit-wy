@@ -46,7 +46,10 @@ mcp = _Server(
     version=__version__,
     instructions=(
         "AutoCAD 图纸转 Revit 2022+ 构件的工具集。\n"
-        "推荐路径：① 先 rwy_dwg_to_model 一步跑完转换/体检/对照/清洗/建构件；"
+        "两条路径：\n"
+        "A) 只做模型治理（零风险，建议先从这里试）：rwy_audit_model 巡检 → "
+        "看问题清单 → rwy_fix_issues 批量补参数（默认干跑）。\n"
+        "B) 图纸翻模：① 先 rwy_dwg_to_model 一步跑完转换/体检/对照/清洗/建构件；"
         "② 若返回 blockers（如「有 N 个图层未能自动归类」），把图层名和你的判断"
         "用 rwy_confirm_mapping 确认后重试；③ rwy_build(dry_run=true) 看将建什么，"
         "**必须让用户确认**；④ rwy_build(dry_run=false, confirm=true) 才真正写入。\n"
@@ -411,6 +414,86 @@ def rwy_build(dry_run: bool = True, confirm: bool = False,
             return _err(f"已删除 {deleted} 个旧构件，但写入失败：{ex}")
         return _err(str(ex))
     return _ok(result=res, deleted=deleted)
+
+
+@mcp.tool()
+def rwy_audit_model(host: str = "127.0.0.1", port: int = 48880,
+                    include_views: bool = True,
+                    include_elements: bool = True,
+                    include_types: bool = True,
+                    html_path: str = "",
+                    markdown_path: str = "") -> Dict[str, Any]:
+    """【第一阶段试点】巡检当前打开的 Revit 模型：无用/空/未放置视图、
+    缺参数构件、族命名不合规、未使用类型。**只读，不改模型。**
+
+    这是风险最低、见效最快的切入点：不用碰几何，就能让团队看到
+    AI 替代人工逐条核对的效率。返回结构化问题清单 + 健康分 + 可批量修正的 id。
+
+    规则定义在 src/revit_wy/audit.py，改规则不用重编译 Revit 插件。
+    """
+    from .audit import analyze, render_html
+    try:
+        with RevitBridge(host, int(port)) as b:
+            facts = b.call("audit_model", {
+                "include_views": include_views,
+                "include_elements": include_elements,
+                "include_types": include_types,
+            }, timeout=1800)
+    except Exception as ex:
+        return _err(f"巡检失败：{ex}", hint="确认 Revit 已打开模型且插件在监听")
+    if not isinstance(facts, dict):
+        return _err(f"巡检返回格式异常：{type(facts).__name__}")
+
+    rep = analyze(facts)
+    out = rep.as_dict()
+    # 明细可能上千条，MCP 返回给模型的只保留汇总 + 前 50 条，避免塞爆上下文
+    out["issues"] = out["issues"][:50]
+    out["issues_truncated"] = len(rep.issues) > 50
+    if html_path:
+        Path(html_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(html_path).write_text(render_html(rep), encoding="utf-8")
+        out["html"] = html_path
+    if markdown_path:
+        Path(markdown_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(markdown_path).write_text(rep.markdown(), encoding="utf-8")
+        out["markdown"] = markdown_path
+    out["next_step"] = ("用 rwy_fix_issues 批量补参数（只改 mark/comments），"
+                        "或 revit-wy audit export 导出清单给 Excel")
+    return _ok(**out)
+
+
+@mcp.tool()
+def rwy_fix_issues(ids: List[int], param: str = "mark", value: str = "",
+                   apply: bool = False,
+                   host: str = "127.0.0.1", port: int = 48880) -> Dict[str, Any]:
+    """【第一阶段试点】批量修正**白名单参数**（mark / comments / description）。
+
+    必须显式给 ids（通常来自 rwy_audit_model 的 fixable.auto_fixable_ids）。
+    `apply` 默认 false：只干跑，告诉你将改多少个。
+    绝不改几何、不改类型、不删视图——这三件事风险量级不同，不放进批量入口。
+    """
+    if not ids:
+        return _err("ids 为空：为避免误改，必须显式给出要修正的元素 id")
+    try:
+        with RevitBridge(host, int(port)) as b:
+            res = b.call("fix_issues", {
+                "ids": list(ids), "param": param, "value": value, "apply": bool(apply),
+            }, timeout=600)
+    except Exception as ex:
+        return _err(f"批量修正失败：{ex}")
+    return _ok(**res) if isinstance(res, dict) else _ok(result=res)
+
+
+@mcp.tool()
+def rwy_export_audit(out_dir: str = "",
+                     host: str = "127.0.0.1", port: int = 48880) -> Dict[str, Any]:
+    """把模型巡检事实导出为 JSON + CSV（UTF-8 BOM，Excel 直接打开不乱码）。"""
+    try:
+        with RevitBridge(host, int(port)) as b:
+            res = b.call("export_audit", {"out_dir": out_dir}, timeout=1800)
+    except Exception as ex:
+        return _err(f"导出失败：{ex}")
+    return _ok(**res) if isinstance(res, dict) else _ok(result=res)
 
 
 @mcp.tool()

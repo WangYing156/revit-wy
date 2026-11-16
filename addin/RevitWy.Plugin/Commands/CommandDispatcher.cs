@@ -65,11 +65,21 @@ namespace RevitWy.Plugin
                     return _bridge.Invoke(ui => (object)DeleteTagged(ui), DefaultTimeout);
                 case "select_by_tags":
                     return _bridge.Invoke(ui => (object)SelectByTags(ui, p), TimeSpan.FromSeconds(60));
+                // ---- 试点第一阶段：模型体检与批量数据治理（只读为主）----
+                case "audit_model":
+                    return _bridge.Invoke(ui => (object)AuditCommands.AuditModel(ui, p),
+                                          TimeSpan.FromMinutes(20));
+                case "fix_issues":
+                    return _bridge.Invoke(ui => (object)AuditCommands.FixIssues(ui, p), DefaultTimeout);
+                case "export_audit":
+                    return _bridge.Invoke(ui => (object)AuditCommands.ExportAudit(ui, p),
+                                          TimeSpan.FromMinutes(20));
                 default:
                     throw new RwyException(ErrorCodes.Unsupported,
                         "未知方法: " + method + "（可用: ping/status/prepare_project/build_ir/"
                         + "create_levels/create_grids/create_walls/create_columns/create_beams/"
-                        + "create_openings/create_slabs/list_types/delete_tagged/select_by_tags）");
+                        + "create_openings/create_slabs/list_types/delete_tagged/select_by_tags/"
+                        + "audit_model/fix_issues/export_audit）");
             }
         }
 

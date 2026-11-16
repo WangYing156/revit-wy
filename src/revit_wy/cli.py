@@ -5,6 +5,7 @@
     revit-wy install-mcp                    写入 Cursor / WorkBuddy 的 MCP 配置（不破坏已有）
     revit-wy mock                           起一个假 Revit（没有 Revit 也能试跑）
     revit-wy demo                           一条命令演示全流程（自动起假 Revit）
+    revit-wy audit model|csv|fix            ★模型体检与批量数据治理（试点第一阶段）
     revit-wy dwg       a.dwg                 ★一键：DWG→构件台账（五阶段）
     revit-wy saving    a.ir.json             ★减负估算：省多少工时
     revit-wy dwg2dxf  <dir>                 批量 DWG→DXF（accoreconsole）
@@ -357,6 +358,85 @@ def cmd_saving(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ audit
+def cmd_audit(args) -> int:
+    """模型体检：只读巡检 → 报告；fix 只改白名单参数。"""
+    from .audit import analyze, render_html
+    from .bridge import RevitBridge, probe
+
+    info = probe(args.host, args.port)
+    if not info.get("connected"):
+        print(_c("err", "\n  连不上 Revit 插件，模型体检需要 Revit 正在运行。"))
+        print(_c("dim", "  没有 Revit 的话可以先看图纸侧：revit-wy dwg <图.dxf>"))
+        print(_c("dim", f"  （{info.get('error','')[:120]}）"))
+        if args.demo:
+            print(_c("dim", "\n  --demo：用内置仿真数据演示报告长什么样"))
+            from .audit_demo import demo_facts
+            rep = analyze(demo_facts())
+            _print_audit(rep, args)
+            return 0
+        return 2
+
+    with RevitBridge(args.host, args.port) as b:
+        if args.action == "fix":
+            ids = [int(x) for x in (args.ids or "").replace(" ", "").split(",") if x]
+            if not ids:
+                print(_c("err", "  需要 --ids 1001,1002,… （来自 audit model 的 fixable 列表）"))
+                return 2
+            res = b.call("fix_issues", {"ids": ids, "param": args.param,
+                                        "value": args.value, "apply": args.apply},
+                         timeout=600)
+            _print(res)
+            return 0 if res.get("ok") else 3
+
+        if args.action == "csv":
+            res = b.call("export_audit", {"out_dir": args.out or ""}, timeout=1800)
+            _print(res)
+            return 0 if res.get("ok") else 3
+
+        facts = b.call("audit_model", {}, timeout=1800)
+
+    rep = analyze(facts)
+    _print_audit(rep, args)
+    return 0
+
+
+def _print_audit(rep, args) -> None:
+    from .audit import RULES, render_html
+    warn = sum(1 for i in rep.issues if i.level == "warn")
+    print(_c("h", f"\n  {rep.document}  （Revit {rep.revit_version or '?'}）"))
+    print(f"  视图 {rep.counts.get('views',0)}｜构件 {rep.counts.get('elements',0)}"
+          f"｜类型 {rep.counts.get('types',0)}")
+    color = "ok" if rep.score >= 80 else ("warn" if rep.score >= 60 else "err")
+    print(_c(color, f"  健康分 {rep.score}/100   问题 {len(rep.issues)}"
+                    f"（警告 {warn} / 提示 {len(rep.issues)-warn}）"))
+    if rep.by_rule:
+        print(_c("h", "\n  按规则："))
+        for rid, n in sorted(rep.by_rule.items(), key=lambda t: -t[1]):
+            r = RULES.get(rid, {})
+            print(f"    {rid:<10}{n:>5}  {r.get('title','')}")
+    fs = rep.fixable_summary()
+    if fs["auto_fixable_count"]:
+        print(_c("dim", f"\n  可批量修正 {fs['auto_fixable_count']} 个构件"
+                        f"（只改 {', '.join(fs['params'])}）："))
+        print(_c("dim", f"    revit-wy audit fix --ids "
+                        f"{','.join(str(i) for i in fs['auto_fixable_ids'][:8])}"
+                        f"{',…' if fs['auto_fixable_count'] > 8 else ''} "
+                        f"--param mark --value 待补 --apply"))
+    for k, v in rep.effort.items():
+        print(f"  {k}：{v}")
+    if args.md:
+        Path(args.md).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.md).write_text(rep.markdown(), encoding="utf-8")
+        print(_c("dim", f"\n  Markdown：{args.md}"))
+    if args.html:
+        Path(args.html).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.html).write_text(render_html(rep), encoding="utf-8")
+        print(_c("dim", f"  HTML：{args.html}"))
+    if args.json:
+        _print(rep.as_dict())
+
+
 # ------------------------------------------------------------------ mock/demo
 def cmd_install_mcp(args) -> int:
     from .install_mcp import install
@@ -565,6 +645,23 @@ def build_parser() -> argparse.ArgumentParser:
     mk.add_argument("--port", type=int, default=48880)
     mk.add_argument("--host", default="127.0.0.1")
     mk.set_defaults(func=cmd_mock)
+
+    au = sub.add_parser("audit", help="★模型体检与批量数据治理（试点第一阶段）")
+    au.add_argument("action", nargs="?", default="model",
+                    choices=["model", "csv", "fix", "marks"])
+    au.add_argument("--host", default="127.0.0.1")
+    au.add_argument("--port", type=int, default=48880)
+    au.add_argument("--md", default="", help="输出 Markdown 报告")
+    au.add_argument("--html", default="", help="输出 HTML 报告（发给领导看）")
+    au.add_argument("--json", action="store_true")
+    au.add_argument("--out", default="", help="csv 模式的输出目录")
+    au.add_argument("--ids", default="", help="fix 模式的元素 id，逗号分隔")
+    au.add_argument("--param", default="mark",
+                    choices=["mark", "comments", "description"])
+    au.add_argument("--value", default="")
+    au.add_argument("--apply", action="store_true", help="fix 模式：真的写入（默认干跑）")
+    au.add_argument("--demo", action="store_true", help="无 Revit 时用仿真数据演示报告")
+    au.set_defaults(func=cmd_audit)
 
     dm = sub.add_parser("demo", help="一条命令演示全流程（自动起假 Revit）")
     dm.add_argument("path", nargs="?", default="samples/arch_plan.dxf")

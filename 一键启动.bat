@@ -5,7 +5,7 @@ REM
 REM  Double-click this file. It will:
 REM    1. find Python
 REM    2. create .venv and install deps
-REM    3. compile + deploy the Revit 2022 add-in (skipped if no Revit)
+REM    3. compile + deploy the add-in for every installed Revit 2022+ (skip if none)
 REM    4. write MCP config for Cursor / WorkBuddy (merge, never overwrite)
 REM    5. self-test the 5-stage pipeline
 REM    6. start the workspace and open the browser
@@ -28,7 +28,7 @@ if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
 
 echo.
 echo ===========================================================
-echo   revit-wy  ^|  AutoCAD to Revit 2022 one-click
+echo   revit-wy  ^|  AutoCAD to Revit 2022+ one-click
 echo ===========================================================
 echo.
 

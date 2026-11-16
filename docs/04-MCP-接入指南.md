@@ -232,5 +232,8 @@ MCP 进程内保留了本次会话的中间状态（`_S`）：
 | 减负估算（无对应工具） | `revit-wy saving x.ir.json --md r.md` |
 | `rwy_status` | `revit-wy status` |
 | `rwy_dwg2dxf` | `revit-wy dwg2dxf <目录>` |
+| `rwy_audit_model` | `revit-wy audit model --md r.md --html r.html` |
+| `rwy_fix_issues` | `revit-wy audit fix --ids 1,2 --param mark --value X --apply` |
+| `rwy_export_audit` | `revit-wy audit csv --out reports` |
 
 **排错原则**：先跑 CLI。CLI 通 → 问题在 MCP 配置；CLI 不通 → 问题在工具链。

@@ -202,6 +202,64 @@ def handle_list_types(p):
             {"family": "混凝土矩形梁", "type": "300x600", "active": True}]
 
 
+def _mock_audit_facts(p):
+    """仿真一个"典型的不太干净的模型"，让 audit 规则在无 Revit 时也能测。"""
+    views = [
+        {"id": 101, "name": "3F-建-平面", "view_type": "FloorPlan", "is_template": False,
+         "is_placed": True, "is_empty": False, "element_count": 40, "has_annotations": True},
+        {"id": 102, "name": "副本 1", "view_type": "FloorPlan", "is_template": False,
+         "is_placed": False, "is_empty": False, "element_count": 12, "has_annotations": True},
+        {"id": 103, "name": "平面图 2", "view_type": "FloorPlan", "is_template": False,
+         "is_placed": True, "is_empty": True, "element_count": 0, "has_annotations": False},
+        {"id": 104, "name": "标高 1", "view_type": "ThreeD", "is_template": False,
+         "is_placed": False, "is_empty": False, "element_count": 33, "has_annotations": False},
+    ]
+    elements, eid = [], 1000
+    for kind, cat, fam, tn, n in [("walls", "墙", "基本墙", "常规 - 200mm", 20),
+                                  ("columns", "结构柱", "混凝土矩形柱", "400x400", 8),
+                                  ("beams", "结构框架", "混凝土矩形梁", "300x600", 6),
+                                  ("doors", "门", "单扇-与墙齐", "900x2100", 4)]:
+        for i in range(n):
+            eid += 1
+            elements.append({"id": eid, "kind": kind, "category": cat, "family": fam,
+                             "type_name": tn,
+                             "has_mark": (i % 3 != 0),          # 三分之一缺标记
+                             "has_comments": (i % 5 != 0)})     # 五分之一缺注释
+    types = [
+        {"id": 2001, "category": "墙", "family": "基本墙", "name": "常规 - 200mm", "instance_count": 20},
+        {"id": 2002, "category": "墙", "family": "基本墙", "name": "常规 (200)", "instance_count": 0},
+        {"id": 2003, "category": "结构柱", "family": "混凝土矩形柱", "name": "400x400", "instance_count": 8},
+    ]
+    return {"schema": "1.0", "revit_version": "2022", "document": STATE.document,
+            "document_path": "/mock/" + STATE.document, "is_workshared": False,
+            "element_count": len(elements), "views": views, "elements": elements,
+            "types": types, "warnings": ["mock: 数据为协议级仿真，不代表真实模型"]}
+
+
+def handle_audit_model(p):
+    return _mock_audit_facts(p)
+
+
+def handle_fix_issues(p):
+    ids = p.get("ids") or []
+    if not ids:
+        raise KeyError("ids 为空：为避免误改，必须显式给出要修正的元素 id")
+    if not p.get("apply"):
+        return {"ok": True, "dry_run": True, "would_change": len(ids),
+                "skipped": [], "sample": [{"id": i, "from": None} for i in ids[:5]],
+                "note": "干跑：未修改。确认后传 apply=true"}
+    return {"ok": True, "changed": len(ids), "skipped": [], "errors": []}
+
+
+def handle_export_audit(p):
+    import os
+    import tempfile
+    d = p.get("out_dir") or os.path.join(tempfile.gettempdir(), "revit-wy-audit")
+    return {"ok": True, "json": os.path.join(d, "model.json"),
+            "csv": os.path.join(d, "model_elements.csv"), "out_dir": d,
+            "views": 4, "elements": 38, "types": 3}
+
+
 METHODS = {
     "ping": handle_ping,
     "status": handle_status,
@@ -210,6 +268,9 @@ METHODS = {
     "delete_tagged": handle_delete_tagged,
     "select_by_tags": handle_select_by_tags,
     "list_types": handle_list_types,
+    "audit_model": handle_audit_model,
+    "fix_issues": handle_fix_issues,
+    "export_audit": handle_export_audit,
     "create_levels": lambda p: {"created": len(p.get("levels") or [])},
     "create_grids": lambda p: {"created": len(p.get("grids") or [])},
     "create_walls": lambda p: handle_build_ir({"ir": {"levels": [], "grids": [],

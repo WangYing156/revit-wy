@@ -35,6 +35,12 @@ manual_review_seconds_each: 60   # 每个"待确认图层"人工判断要多久
 setup_minutes_first_time: 20
 setup_minutes_later: 3
 
+# 模型体检（第一阶段试点）的成本口径
+# 人工逐条核对一个构件要多少秒：打开属性、看参数、判断是否缺失
+audit_seconds_per_element: 4
+# 人工核对一个视图（是否空、是否在图纸上、命名是否规范）
+audit_seconds_per_view: 20
+
 # 折算
 hourly_cost_cny: 120             # 用于折算人天成本
 work_hours_per_day: 8
