@@ -1,0 +1,40 @@
+# 减负估算的工时基准 —— 工程师可自行改成贵司实测值
+# 修改后 revit-wy saving 会立即按新值重算，无需改代码。
+#
+# 用途：回答"这套工具到底帮我省了多少时间"，把结论变成可核对的数字。
+
+# 各构件**手工建模**一次需要多少秒（含定位、选类型、调参数）
+manual_seconds:
+  level: 120      # 建标高
+  grid: 45        # 建轴网（含命名核对）
+  column: 40      # 柱：放置 + 对齐轴网
+  wall: 25        # 墙：画一道（含类型/厚度选择）
+  beam: 35        # 梁
+  door: 90        # 门：载入族 + 宿主墙 + 定位
+  window: 90      # 窗：同上
+  slab: 15        # 楼板：拾取边界
+
+# 每个工程都要重复干、但容易漏算的固定开销（秒）
+manual_overhead:
+  open_and_orient_drawing: 60    # 打开图纸、对位、看比例
+  create_wall_types: 120         # 建缺的墙类型
+  fix_units_and_cleanup: 180     # 处理单位/垃圾图层/断线
+
+# AI 侧耗时（秒）
+ai_seconds:
+  per_drawing_fixed: 8           # 转换+体检+对照+清洗+建构件 的固定开销
+  per_component: 0.02            # 每个构件的计算开销（可忽略但列出来更诚实）
+
+# 复核成本
+review_rate: 0.25                # 自动归类的构件按 25% 抽检
+review_seconds_per_component: 20 # 抽检一个构件看几秒（对着图纸核对，不便宜）
+visual_check_minutes_per_drawing: 10  # 每张图整体目视校核 —— 这部分省不掉，别漏算
+manual_review_seconds_each: 60   # 每个"待确认图层"人工判断要多久
+
+# 一次性投入（分钟）：首次调规则 vs 之后复用
+setup_minutes_first_time: 20
+setup_minutes_later: 3
+
+# 折算
+hourly_cost_cny: 120             # 用于折算人天成本
+work_hours_per_day: 8

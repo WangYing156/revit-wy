@@ -173,29 +173,53 @@ def act_revit_probe() -> Dict[str, Any]:
     return {"ok": True, "revit": p}
 
 
-def act_build(dry_run: bool, confirm: bool, steps=None) -> Dict[str, Any]:
+def act_build(dry_run: bool, confirm: bool, steps=None,
+              replace_existing: bool = False) -> Dict[str, Any]:
     if S.model is None:
         return {"ok": False, "error": "尚未构建 IR"}
+
+    # 已有构件数：不连 Revit 就只能是"不知道"，绝不能假装是 0
+    existing, reachable, probe_err = 0, True, ""
+    try:
+        with RevitBridge(S.revit_host, S.revit_port) as b:
+            existing = int(b.status().get("revit_wy_tagged", 0) or 0)
+    except Exception as ex:
+        reachable, probe_err = False, str(ex)
+
     if dry_run:
+        check = [
+            "标高将按缺省创建或复用同名",
+            "墙类型按厚度匹配，缺失则复制基准类型",
+            "门窗按邻近墙找宿主，失败则跳过并记录",
+        ]
+        if not reachable:
+            check.append(f"⚠ 连不上 Revit：{probe_err}")
+        if existing and not replace_existing:
+            check.append(f"⚠ 模型里已有 {existing} 个上次翻模构件，本次会叠加两份")
         return {
             "ok": True, "dry_run": True, "will_create": S.model.counts(),
-            "check": [
-                "标高将按缺省创建或复用同名",
-                "墙类型按厚度匹配，缺失则复制基准类型",
-                "门窗按邻近墙找宿主，失败则跳过并记录",
-            ],
-            "note": "确认后调用 build(dry_run=false, confirm=true)",
+            "would_delete": existing if replace_existing else 0,
+            "existing_tagged": existing, "revit_reachable": reachable,
+            "check": check,
+            "note": "确认后调用 build(dry_run=false, confirm=true"
+                    + (", replace_existing=true)" if replace_existing else ")"),
         }
     if not confirm:
         return {"ok": False,
                 "error": "安全闸未开：必须同时传 dry_run=false 与 confirm=true"}
 
     ir = S.model.to_dict()
+    deleted = 0
     try:
         with RevitBridge(S.revit_host, S.revit_port) as b:
+            if replace_existing and existing:
+                deleted = int((b.delete_tagged() or {}).get("deleted", 0))
             res = b.build_ir(ir, steps=steps, dry_run=False, auto_save=True)
     except Exception as ex:
-        return {"ok": False, "error": str(ex),
+        msg = str(ex)
+        if deleted:
+            msg = f"已删除 {deleted} 个旧构件，但写入失败：{ex}"
+        return {"ok": False, "error": msg, "deleted": deleted,
                 "hint": "确认 Revit 已打开项目，且功能区 revit-wy 显示运行中"}
 
     if res.get("ok"):
@@ -209,7 +233,7 @@ def act_build(dry_run: bool, confirm: bool, steps=None) -> Dict[str, Any]:
             pass
     S.last_build = res
     return {"ok": bool(res.get("ok")), "result": res,
-            "diff": S.diff_vs_baseline()}
+            "deleted": deleted, "diff": S.diff_vs_baseline()}
 
 
 def act_select(ids: list, kinds: list | None = None) -> Dict[str, Any]:
@@ -343,6 +367,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(act_build(
                     dry_run=p.get("dry_run", True),
                     confirm=p.get("confirm", False),
+                    replace_existing=p.get("replace_existing", False),
                     steps=p.get("steps")))
 
             if u.path == "/api/select":

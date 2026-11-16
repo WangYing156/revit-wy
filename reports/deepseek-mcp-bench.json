@@ -1,0 +1,1002 @@
+{
+  "meta": {
+    "model": "offline-selfcheck",
+    "backend": "mock_revit",
+    "timestamp": "2026-11-16T06:47:19",
+    "base_url": "https://api.deepseek.com/v1"
+  },
+  "summary": {
+    "total": 10,
+    "passed": 10,
+    "rate": 100.0,
+    "by_level": {
+      "0": {
+        "name": "L0 只读感知",
+        "pass": 3,
+        "total": 3,
+        "rate": 100.0
+      },
+      "1": {
+        "name": "L1 单步操作",
+        "pass": 3,
+        "total": 3,
+        "rate": 100.0
+      },
+      "2": {
+        "name": "L2 多步编排",
+        "pass": 2,
+        "total": 2,
+        "rate": 100.0
+      },
+      "3": {
+        "name": "L3 异常自愈",
+        "pass": 1,
+        "total": 1,
+        "rate": 100.0
+      },
+      "4": {
+        "name": "L4 规则推理",
+        "pass": 1,
+        "total": 1,
+        "rate": 100.0
+      }
+    },
+    "total_latency_s": 0.78,
+    "tool_calls": 15
+  },
+  "levels": {
+    "0": {
+      "name": "L0 只读感知",
+      "desc": "能读懂图纸并准确汇报，不产生任何副作用"
+    },
+    "1": {
+      "name": "L1 单步操作",
+      "desc": "选对工具、传对参数，含无副作用的试运行"
+    },
+    "2": {
+      "name": "L2 多步编排",
+      "desc": "按依赖顺序串联多个工具完成一次完整翻模"
+    },
+    "3": {
+      "name": "L3 异常自愈",
+      "desc": "读懂错误信息，改参数后重试成功"
+    },
+    "4": {
+      "name": "L4 规则推理",
+      "desc": "根据不规范的图层命名推断专业归属"
+    }
+  },
+  "tasks": [
+    {
+      "id": "L0-1",
+      "level": 0,
+      "title": "环境自检",
+      "passed": true,
+      "rounds": 1,
+      "tools_called": [
+        "rwy_doctor"
+      ],
+      "latency_s": 0.003,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_doctor",
+          "result": {
+            "ok": true,
+            "version": "0.1.0",
+            "python": "3.11.2",
+            "ezdxf": "1.4.5",
+            "config_dir": "/home/user/revit-wy/config",
+            "user_dir": "/home/user/.revit-wy",
+            "profiles": [
+              "arch",
+              "struct",
+              "mep"
+            ],
+            "revit": {
+              "connected": true,
+              "pong": true,
+              "revit_version": "2022",
+              "revit_build": "mock",
+              "product": "Autodesk Revit 2022 (mock)",
+              "document": "MockProject.rvt",
+              "document_path": "/mock/MockProject.rvt",
+              "is_family": false,
+              "plugin": "revit-wy 0.1.0 (mock)",
+              "protocol": "revit-wy/1"
+            }
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L0-2",
+      "level": 0,
+      "title": "图纸体检",
+      "passed": true,
+      "rounds": 1,
+      "tools_called": [
+        "rwy_scan_drawing"
+      ],
+      "latency_s": 0.062,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_scan_drawing",
+          "result": {
+            "ok": true,
+            "path": "samples/arch_plan.dxf",
+            "dxf_version": "AC1032",
+            "units": {
+              "insunits": 4,
+              "to_mm": 1.0
+            },
+            "extent_mm": [
+              -3000.0,
+              -3000.0,
+              10000.0,
+              9000.0
+            ],
+            "size_m": [
+              13.0,
+              12.0
+            ],
+            "total_entities": 28,
+            "layer_count": 8,
+            "layers": [
+              {
+                "name": "AXIS",
+                "count": 10,
+                "kinds": [
+                  [
+                    "LINE",
+                    5
+                  ],
+                  [
+                    "TEXT",
+                    5
+                  ]
+                ]
+              },
+              {
+                "name": "A-WALL",
+                "count": 8,
+                "kinds": [
+                  [
+                    "LINE",
+                    8
+                  ]
+                ]
+              },
+              {
+                "name": "A-WALL-200",
+                "count": 4,
+                "kinds": [
+                  [
+                    "LINE",
+                    4
+                  ]
+                ]
+              },
+              {
+                "name": "A-DIM",
+                "count": 2,
+                "kinds": [
+                  [
+                    "LINE",
+                    1
+                  ],
+                  [
+                    "TEXT",
+                    1
+                  ]
+                ]
+              },
+              {
+                "name": "A-DOOR",
+                "count": 1,
+                "kinds": [
+                  [
+                    "INSERT",
+                    1
+                  ]
+                ]
+              },
+              {
+                "name": "门窗",
+                "count": 1,
+                "kinds": [
+                  [
+                    "INSERT",
+                    1
+                  ]
+                ]
+              },
+              {
+                "name": "图框",
+                "count": 1,
+                "kinds": [
+                  [
+                    "LWPOLYLINE",
+                    1
+                  ]
+                ]
+              },
+              {
+                "name": "FURN",
+                "count": 1,
+                "kinds": [
+                  [
+                    "LWPOLYLINE",
+                    1
+                  ]
+                ]
+              }
+            ],
+            "blocks": [
+              "DOOR_900",
+              "_ARCHTICK",
+              "_CLOSEDBLANK",
+              "_CLOSEDFILLED",
+              "窗C1515"
+            ],
+            "warning": null
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L0-3",
+      "level": 0,
+      "title": "查询已有构件",
+      "passed": true,
+      "rounds": 1,
+      "tools_called": [
+        "rwy_status"
+      ],
+      "latency_s": 0.001,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_status",
+          "result": {
+            "ok": true,
+            "document": "MockProject.rvt",
+            "document_path": "/mock/MockProject.rvt",
+            "is_modified": false,
+            "revit_version": "2022",
+            "units": "feet (internal) / mm (IR)",
+            "counts": {
+              "levels": 0,
+              "grids": 0,
+              "walls": 0,
+              "columns": 0,
+              "beams": 0,
+              "doors": 0,
+              "windows": 0,
+              "slabs": 0
+            },
+            "revit_wy_tagged": 0,
+            "levels_detail": []
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L1-1",
+      "level": 1,
+      "title": "生成数模对照单",
+      "passed": true,
+      "rounds": 1,
+      "tools_called": [
+        "rwy_review_mapping"
+      ],
+      "latency_s": 0.064,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_review_mapping",
+          "result": {
+            "ok": true,
+            "profile": "arch",
+            "out_dir": "/tmp/bench_review",
+            "files": {
+              "markdown": "/tmp/bench_review/mapping_review.md",
+              "csv": "/tmp/bench_review/mapping_review.csv",
+              "confirmed": "/tmp/bench_review/mapping_confirmed.yaml",
+              "json": "/tmp/bench_review/mapping_review.json"
+            },
+            "action_summary": {
+              "build": 5,
+              "isolate": 2,
+              "ignore": 1
+            },
+            "need_review": [],
+            "can_auto_build": true,
+            "next_step": "可直接 rwy_prepare_build"
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L1-2",
+      "level": 1,
+      "title": "修改建模规则",
+      "passed": true,
+      "rounds": 1,
+      "tools_called": [
+        "rwy_set_rules"
+      ],
+      "latency_s": 0.0,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_set_rules",
+          "result": {
+            "ok": true,
+            "summary": {
+              "目标 Revit": "2022",
+              "墙族/类型": "系统族: 基本墙 · 常规 - {thickness}mm",
+              "墙默认厚": "200 mm",
+              "柱族": "系统族: 结构柱",
+              "梁截面默认": "200×500 mm",
+              "门族兜底": "单扇 - 与墙齐",
+              "窗族兜底": "固定窗",
+              "门默认尺寸": "900×2100 mm",
+              "窗默认尺寸": "1500×1500 mm",
+              "窗台高": "900 mm",
+              "板默认厚": "120 mm",
+              "层高": "4200 mm",
+              "事务模式": "per_element_commit"
+            },
+            "note": "已应用于本次会话；需要持久化调 rwy_save_rules"
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L1-3",
+      "level": 1,
+      "title": "干跑不落模型",
+      "passed": true,
+      "rounds": 2,
+      "tools_called": [
+        "rwy_prepare_build",
+        "rwy_build"
+      ],
+      "latency_s": 0.122,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_prepare_build",
+          "result": {
+            "ok": true,
+            "ir_file": "/home/user/.revit-wy/work/arch_plan/model.ir.json",
+            "counts": {
+              "levels": 2,
+              "grids": 5,
+              "walls": 5,
+              "columns": 0,
+              "beams": 0,
+              "doors": 1,
+              "windows": 1,
+              "slabs": 0
+            },
+            "quality": {
+              "hosted_openings": 2,
+              "unhosted_openings": 0,
+              "grids_named": 5,
+              "walls_from_pairing": 5,
+              "walls_from_fallback": 0,
+              "unpaired_lines": 0
+            },
+            "samples": {
+              "wall": [
+                {
+                  "id": "wall-13255fe536",
+                  "kind": "wall",
+                  "start": [
+                    150.0,
+                    150.0
+                  ],
+                  "end": [
+                    6050.0,
+                    150.0
+                  ],
+                  "thickness_mm": 200,
+                  "base_level": "1层",
+                  "top_level": "2层",
+                  "height_mm": 4200.0,
+                  "type_hint": "常规 - 200mm",
+                  "source": "pair",
+                  "layer": "A-WALL",
+                  "confidence": 0.95
+                },
+                {
+                  "id": "wall-dd7862ae9f",
+                  "kind": "wall",
+                  "start": [
+                    6050.0,
+                    4850.0
+                  ],
+                  "end": [
+                    150.0,
+                    4850.0
+                  ],
+                  "thickness_mm": 200,
+                  "base_level": "1层",
+                  "top_level": "2层",
+                  "height_mm": 4200.0,
+                  "type_hint": "常规 - 200mm",
+                  "source": "pair",
+                  "layer": "A-WALL",
+                  "confidence": 0.95
+                },
+                {
+                  "id": "wall-3b9bf8f870",
+                  "kind": "wall",
+                  "start": [
+                    200.0,
+                    2400.0
+                  ],
+                  "end": [
+                    6000.0,
+                    2400.0
+                  ],
+                  "thickness_mm": 100,
+                  "base_level": "1层",
+                  "top_level": "2层",
+                  "height_mm": 4200.0,
+                  "type_hint": "常规 - 100mm",
+                  "source": "pair",
+                  "layer": "A-WALL-200",
+                  "confidence": 0.95
+                }
+              ],
+              "column": [],
+              "door": [
+                {
+                  "id": "win-fa2efd89ef",
+                  "kind": "door",
+                  "center": [
+                    2000.0,
+                    2350.0
+                  ],
+                  "width_mm": 900.0,
+                  "height_mm": 2100.0,
+                  "sill_mm": 0.0,
+                  "rotation_deg": 0.0,
+                  "family_hint": "单扇 - 与墙齐",
+                  "base_level": "1层",
+                  "block_name": "DOOR_900",
+                  "host_wall_id": "wall-3b9bf8f870",
+                  "layer": "A-DOOR"
+                }
+              ],
+              "grid": [
+                {
+                  "id": "grid-1",
+                  "name": "1",
+                  "start": [
+                    0.0,
+                    -1300.0
+                  ],
+                  "end": [
+                    0.0,
+                    6300.0
+                  ],
+                  "vertical": true
+                },
+                {
+                  "id": "grid-A",
+                  "name": "A",
+                  "start": [
+                    -1300.0,
+                    0.0
+                  ],
+                  "end": [
+                    7500.0,
+                    0.0
+                  ],
+                  "vertical": false
+                },
+                {
+                  "id": "grid-2",
+                  "name": "2",
+                  "start": [
+                    3100.0,
+                    -1300.0
+                  ],
+                  "end": [
+                    3100.0,
+                    6300.0
+                  ],
+                  "vertical": true
+                }
+              ]
+            },
+            "next_step": "rwy_build 写入 Revit（建议先 dry_run=true）"
+          }
+        },
+        {
+          "tool": "rwy_build",
+          "result": {
+            "ok": true,
+            "dry_run": true,
+            "will_create": {
+              "levels": 2,
+              "grids": 5,
+              "walls": 5,
+              "columns": 0,
+              "beams": 0,
+              "doors": 1,
+              "windows": 1,
+              "slabs": 0
+            },
+            "would_delete": 0,
+            "existing_tagged": 0,
+            "revit_reachable": true,
+            "check": [
+              "标高已存在或可创建",
+              "网格名称不与现有冲突",
+              "墙类型将按厚度自动匹配/创建",
+              "门窗尝试按邻近墙选宿主，失败则跳过并记录"
+            ],
+            "note": "确认无误后调用 rwy_build(dry_run=false, confirm=true)"
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L2-1",
+      "level": 2,
+      "title": "完整翻模流程",
+      "passed": true,
+      "rounds": 3,
+      "tools_called": [
+        "rwy_review_mapping",
+        "rwy_prepare_build",
+        "rwy_build"
+      ],
+      "latency_s": 0.223,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_review_mapping",
+          "result": {
+            "ok": true,
+            "profile": "arch",
+            "out_dir": "/tmp/bench_review",
+            "files": {
+              "markdown": "/tmp/bench_review/mapping_review.md",
+              "csv": "/tmp/bench_review/mapping_review.csv",
+              "confirmed": "/tmp/bench_review/mapping_confirmed.yaml",
+              "json": "/tmp/bench_review/mapping_review.json"
+            },
+            "action_summary": {
+              "build": 5,
+              "isolate": 2,
+              "ignore": 1
+            },
+            "need_review": [],
+            "can_auto_build": true,
+            "next_step": "可直接 rwy_prepare_build"
+          }
+        },
+        {
+          "tool": "rwy_prepare_build",
+          "result": {
+            "ok": true,
+            "ir_file": "/home/user/.revit-wy/work/arch_plan/model.ir.json",
+            "counts": {
+              "levels": 2,
+              "grids": 5,
+              "walls": 5,
+              "columns": 0,
+              "beams": 0,
+              "doors": 1,
+              "windows": 1,
+              "slabs": 0
+            },
+            "quality": {
+              "hosted_openings": 2,
+              "unhosted_openings": 0,
+              "grids_named": 5,
+              "walls_from_pairing": 5,
+              "walls_from_fallback": 0,
+              "unpaired_lines": 0
+            },
+            "samples": {
+              "wall": [
+                {
+                  "id": "wall-3b1de9d11e",
+                  "kind": "wall",
+                  "start": [
+                    150.0,
+                    150.0
+                  ],
+                  "end": [
+                    6050.0,
+                    150.0
+                  ],
+                  "thickness_mm": 200,
+                  "base_level": "1层",
+                  "top_level": "2层",
+                  "height_mm": 4200.0,
+                  "type_hint": "常规 - 200mm",
+                  "source": "pair",
+                  "layer": "A-WALL",
+                  "confidence": 0.95
+                },
+                {
+                  "id": "wall-3967270896",
+                  "kind": "wall",
+                  "start": [
+                    6050.0,
+                    4850.0
+                  ],
+                  "end": [
+                    150.0,
+                    4850.0
+                  ],
+                  "thickness_mm": 200,
+                  "base_level": "1层",
+                  "top_level": "2层",
+                  "height_mm": 4200.0,
+                  "type_hint": "常规 - 200mm",
+                  "source": "pair",
+                  "layer": "A-WALL",
+                  "confidence": 0.95
+                },
+                {
+                  "id": "wall-91e8ddc1e2",
+                  "kind": "wall",
+                  "start": [
+                    200.0,
+                    2400.0
+                  ],
+                  "end": [
+                    6000.0,
+                    2400.0
+                  ],
+                  "thickness_mm": 100,
+                  "base_level": "1层",
+                  "top_level": "2层",
+                  "height_mm": 4200.0,
+                  "type_hint": "常规 - 100mm",
+                  "source": "pair",
+                  "layer": "A-WALL-200",
+                  "confidence": 0.95
+                }
+              ],
+              "column": [],
+              "door": [
+                {
+                  "id": "win-03fed525e6",
+                  "kind": "door",
+                  "center": [
+                    2000.0,
+                    2350.0
+                  ],
+                  "width_mm": 900.0,
+                  "height_mm": 2100.0,
+                  "sill_mm": 0.0,
+                  "rotation_deg": 0.0,
+                  "family_hint": "单扇 - 与墙齐",
+                  "base_level": "1层",
+                  "block_name": "DOOR_900",
+                  "host_wall_id": "wall-91e8ddc1e2",
+                  "layer": "A-DOOR"
+                }
+              ],
+              "grid": [
+                {
+                  "id": "grid-1",
+                  "name": "1",
+                  "start": [
+                    0.0,
+                    -1300.0
+                  ],
+                  "end": [
+                    0.0,
+                    6300.0
+                  ],
+                  "vertical": true
+                },
+                {
+                  "id": "grid-A",
+                  "name": "A",
+                  "start": [
+                    -1300.0,
+                    0.0
+                  ],
+                  "end": [
+                    7500.0,
+                    0.0
+                  ],
+                  "vertical": false
+                },
+                {
+                  "id": "grid-2",
+                  "name": "2",
+                  "start": [
+                    3100.0,
+                    -1300.0
+                  ],
+                  "end": [
+                    3100.0,
+                    6300.0
+                  ],
+                  "vertical": true
+                }
+              ]
+            },
+            "next_step": "rwy_build 写入 Revit（建议先 dry_run=true）"
+          }
+        },
+        {
+          "tool": "rwy_build",
+          "result": {
+            "ok": true,
+            "dry_run": true,
+            "will_create": {
+              "levels": 2,
+              "grids": 5,
+              "walls": 5,
+              "columns": 0,
+              "beams": 0,
+              "doors": 1,
+              "windows": 1,
+              "slabs": 0
+            },
+            "would_delete": 0,
+            "existing_tagged": 0,
+            "revit_reachable": true,
+            "check": [
+              "标高已存在或可创建",
+              "网格名称不与现有冲突",
+              "墙类型将按厚度自动匹配/创建",
+              "门窗尝试按邻近墙选宿主，失败则跳过并记录"
+            ],
+            "note": "确认无误后调用 rwy_build(dry_run=false, confirm=true)"
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L3-1",
+      "level": 3,
+      "title": "错误自愈",
+      "passed": true,
+      "rounds": 2,
+      "tools_called": [
+        "rwy_build",
+        "rwy_build"
+      ],
+      "latency_s": 0.137,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_build",
+          "result": {
+            "ok": false,
+            "error": "安全闸未开：必须同时传 dry_run=false 且 confirm=true"
+          }
+        },
+        {
+          "tool": "rwy_build",
+          "result": {
+            "ok": true,
+            "result": {
+              "ok": true,
+              "dry_run": false,
+              "elapsed_s": 0.05,
+              "created": {
+                "walls": 5,
+                "columns": 0,
+                "beams": 0,
+                "doors": 1,
+                "windows": 1,
+                "slabs": 0,
+                "grids": 5,
+                "levels": 0
+              },
+              "skipped": {},
+              "warnings": [],
+              "errors": [],
+              "document": "MockProject.rvt",
+              "mode": "mock"
+            },
+            "deleted": 0
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L2-2",
+      "level": 2,
+      "title": "一步到位翻模（复合工具）",
+      "passed": true,
+      "rounds": 2,
+      "tools_called": [
+        "rwy_dwg_to_model",
+        "rwy_build"
+      ],
+      "latency_s": 0.164,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_dwg_to_model",
+          "result": {
+            "ok": true,
+            "counts": {
+              "levels": 2,
+              "grids": 5,
+              "walls": 5,
+              "columns": 0,
+              "beams": 0,
+              "doors": 1,
+              "windows": 1,
+              "slabs": 0
+            },
+            "stages": [
+              {
+                "name": "convert",
+                "ok": true,
+                "s": 0.0,
+                "detail": {
+                  "dxf": "samples/arch_plan.dxf",
+                  "size_kb": 58.8
+                },
+                "note": "复用同名 DXF：arch_plan.dxf"
+              },
+              {
+                "name": "scan",
+                "ok": true,
+                "s": 0.02,
+                "detail": {
+                  "entities": 28,
+                  "layers": 8,
+                  "unit_to_mm": 1.0,
+                  "extent_mm": [
+                    -3000.0,
+                    -3000.0,
+                    10000.0,
+                    9000.0
+                  ]
+                }
+              },
+              {
+                "name": "review",
+                "ok": true,
+                "s": 0.01,
+                "detail": {
+                  "layers": 8,
+                  "auto": 5,
+                  "isolate": 2,
+                  "ignore": 1,
+                  "manual_review": 0
+                }
+              },
+              {
+                "name": "clean",
+                "ok": true,
+                "s": 0.06,
+                "detail": {
+                  "out": "/home/user/.revit-wy/work/arch_plan/clean.dxf",
+                  "isolated": 3,
+                  "ignored": 1,
+                  "kept": 24,
+                  "purged_layers": 1
+                },
+                "note": "已移除退化实体 0 个；建模层 5 个 / 隔离层 2 个 / 忽略层 1 个"
+              },
+              {
+                "name": "build",
+                "ok": true,
+                "s": 0.06,
+                "detail": {
+                  "levels": 2,
+                  "grids": 5,
+                  "walls": 5,
+                  "columns": 0,
+                  "beams": 0,
+                  "doors": 1,
+                  "windows": 1,
+                  "slabs": 0
+                },
+                "note": "共 14 个构件"
+              }
+            ],
+            "review": {
+              "markdown": "/home/user/.revit-wy/work/arch_plan/review/mapping_review.md",
+              "csv": "/home/user/.revit-wy/work/arch_plan/review/mapping_review.csv",
+              "confirmed": "/home/user/.revit-wy/work/arch_plan/review/mapping_confirmed.yaml",
+              "json": "/home/user/.revit-wy/work/arch_plan/review/mapping_review.json"
+            },
+            "cleanup": {
+              "out": "/home/user/.revit-wy/work/arch_plan/clean.dxf",
+              "isolated": 3,
+              "ignored": 1,
+              "kept": 24,
+              "purged_layers": 1
+            },
+            "ir_file": "/home/user/.revit-wy/work/arch_plan/arch_plan.ir.json",
+            "next_steps": [
+              "看效果：revit-wy panel samples/arch_plan.dxf  → 浏览器打开 http://127.0.0.1:8770/",
+              "落模型：revit-wy build samples/arch_plan.dxf --dry-run 先干跑；确认后 --send 写入 Revit 2022",
+              "或交给 AI：在 Cursor/WorkBuddy 里说「把 arch_plan.dxf 翻成模型，先干跑」"
+            ]
+          }
+        },
+        {
+          "tool": "rwy_build",
+          "result": {
+            "ok": true,
+            "dry_run": true,
+            "will_create": {
+              "levels": 2,
+              "grids": 5,
+              "walls": 5,
+              "columns": 0,
+              "beams": 0,
+              "doors": 1,
+              "windows": 1,
+              "slabs": 0
+            },
+            "would_delete": 0,
+            "existing_tagged": 24,
+            "revit_reachable": true,
+            "check": [
+              "标高已存在或可创建",
+              "网格名称不与现有冲突",
+              "墙类型将按厚度自动匹配/创建",
+              "门窗尝试按邻近墙选宿主，失败则跳过并记录",
+              "⚠ 模型里已有 24 个上次翻模的构件，本次不会删除，会与它们叠加；要替换请传 replace_existing=true"
+            ],
+            "note": "确认无误后调用 rwy_build(dry_run=false, confirm=true)"
+          }
+        }
+      ],
+      "note": ""
+    },
+    {
+      "id": "L4-1",
+      "level": 4,
+      "title": "不规范图层推断",
+      "passed": true,
+      "rounds": 1,
+      "tools_called": [
+        "rwy_confirm_mapping"
+      ],
+      "latency_s": 0.0,
+      "error": "",
+      "transcript": [
+        {
+          "tool": "rwy_confirm_mapping",
+          "result": {
+            "ok": true,
+            "applied": {
+              "墙体 200": "wall",
+              "图层1|柱子": "column",
+              "尺寸标注": "ignore"
+            },
+            "rejected": {},
+            "alias_file": "/home/user/.revit-wy/aliases.json",
+            "learned": 3,
+            "next_step": "rwy_prepare_build"
+          }
+        }
+      ],
+      "note": ""
+    }
+  ]
+}

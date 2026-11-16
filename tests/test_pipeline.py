@@ -243,3 +243,106 @@ class TestAliasShortCircuit:
         m = self._m()
         m.learn("A-WALL-200", "isolate")
         assert m.match("ａ-wall-200").action == "isolate"
+
+
+# ============================================================ DWG 优先流水线
+class TestDwgPipeline:
+    """DWG 一步到位流水线：阶段台账、失败可解释、减负可算。"""
+
+    def test_dxf_复用(self, tmp_path, arch_dxf):
+        from revit_wy.dwg_pipeline import run_dwg
+        r = run_dwg(arch_dxf, "arch", tmp_path)
+        assert r.ok
+        names = [s.name for s in r.stages]
+        assert names == ["convert", "scan", "review", "clean", "build"]
+        assert all(s.ok for s in r.stages)
+        assert r.counts["walls"] == 5
+
+    def test_每个阶段都有耗时(self, tmp_path, arch_dxf):
+        from revit_wy.dwg_pipeline import run_dwg
+        r = run_dwg(arch_dxf, "arch", tmp_path)
+        assert all(s.seconds >= 0 for s in r.stages)
+
+    def test_文件不存在时给建议不抛异常(self, tmp_path, arch_dxf):
+        from revit_wy.dwg_pipeline import run_dwg
+        r = run_dwg(tmp_path / "nope.dwg", "arch", tmp_path)
+        assert r.ok is False
+        assert any("不存在" in b for b in r.blockers)
+
+    def test_有待确认图层就停下(self, tmp_path, arch_dxf):
+        """max_manual_review=0 时，有未归类图层不该继续清洗/建模。"""
+        from revit_wy.dwg_pipeline import run_dwg
+        from revit_wy.mapping import LayerMapper
+        mapper = LayerMapper({"components": {}, "rules": []}, aliases={})
+        r = run_dwg(arch_dxf, "arch", tmp_path, mapper=mapper)
+        assert r.ok is False
+        assert r.counts == {}                      # 没有建出任何构件
+        review = next(s for s in r.stages if s.name == "review")
+        assert review.ok is False
+        assert any("未能自动归类" in b for b in r.blockers)
+
+    def test_产出IR文件(self, tmp_path, arch_dxf):
+        import json
+        from revit_wy.dwg_pipeline import run_dwg
+        r = run_dwg(arch_dxf, "arch", tmp_path)
+        assert r.ir_path and Path(r.ir_path).exists()
+        data = json.loads(Path(r.ir_path).read_text(encoding="utf-8"))
+        assert len(data["walls"]) == 5
+
+    def test_附带减负估算(self, tmp_path, arch_dxf):
+        from revit_wy.dwg_pipeline import run_dwg
+        r = run_dwg(arch_dxf, "arch", tmp_path)
+        assert r.saving["seconds"]["manual"] > 0
+        assert "saving_pct" in r.saving
+
+
+class TestEffort:
+    """减负估算：数字要能被质疑、能改基线。"""
+
+    def test_基线可覆盖(self):
+        from revit_wy.effort import estimate, load_baseline
+        b, _ = load_baseline()
+        slow = {**b, "manual_seconds": {**b["manual_seconds"], "wall": 100}}
+        a = estimate({"walls": 10}, baseline=b)
+        c = estimate({"walls": 10}, baseline=slow)
+        assert c.manual_seconds > a.manual_seconds
+
+    def test_单张首图允许为负(self):
+        """老实：小图首次调规则确实不划算，不能抹成 0。"""
+        from revit_wy.effort import estimate, load_baseline
+        b, _ = load_baseline()
+        e = estimate({"walls": 3}, baseline=b, first_time=True)
+        assert e.net_saving_seconds < 0
+        assert e.as_dict()["worth_it"] is False
+
+    def test_复用后转正(self):
+        """复用规则后，正常规模的图应该转正。"""
+        from revit_wy.effort import estimate, load_baseline
+        b, _ = load_baseline()
+        e = estimate({"levels": 4, "grids": 20, "walls": 120, "columns": 40,
+                      "beams": 60, "doors": 30, "windows": 40, "slabs": 12},
+                     baseline=b, first_time=False)
+        assert e.net_saving_seconds > 0
+
+    def test_复核成本不可忽略(self):
+        """防止把数字做漂亮：目视校核必须计入，提效率不能高到失真。"""
+        from revit_wy.effort import estimate
+        e = estimate({"levels": 4, "grids": 20, "walls": 120, "columns": 40,
+                      "beams": 60, "doors": 30, "windows": 40, "slabs": 12},
+                     first_time=False)
+        assert e.saving_pct < 92
+
+    def test_大批量提效显著(self):
+        from revit_wy.effort import estimate
+        e = estimate({"levels": 4, "grids": 20, "walls": 120, "columns": 40,
+                      "beams": 60, "doors": 30, "windows": 40, "slabs": 12},
+                     first_time=False)
+        assert e.saving_pct > 70
+
+    def test_批量汇总累加(self):
+        from revit_wy.effort import batch_estimate
+        rep = batch_estimate([{"drawing": "a", "counts": {"walls": 10}},
+                              {"drawing": "b", "counts": {"walls": 20}}])
+        assert rep["counts"]["walls"] == 30
+        assert len(rep["drawings"]) == 2
+        assert "cost_cny" in rep

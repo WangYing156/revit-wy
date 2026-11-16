@@ -662,16 +662,33 @@ async function doBuild(){
     })).json();
     if(!dry.ok){ toast("干跑失败：" + esc(dry.error), "err", 5000); return; }
     const c = dry.will_create;
-    const msg = `即将写入 Revit：\n\n`
+    // 已有构件数必须让人看见：不知道就写"未知"，绝不假装是 0
+    let existLine = "";
+    if(dry.revit_reachable === false){
+      existLine = `\n⚠ 连不上 Revit，无法核对已有构件\n`;
+    }else if(dry.existing_tagged > 0){
+      existLine = `\n⚠ 模型里已有 ${dry.existing_tagged} 个上次翻模的构件\n`;
+    }
+    let msg = `即将写入 Revit：\n\n`
       + `标高 ${c.levels} · 轴网 ${c.grids} · 墙 ${c.walls} · 柱 ${c.columns}\n`
-      + `梁 ${c.beams} · 门 ${c.doors} · 窗 ${c.windows} · 楼板 ${c.slabs}\n\n`
-      + `确认写入？`;
+      + `梁 ${c.beams} · 门 ${c.doors} · 窗 ${c.windows} · 楼板 ${c.slabs}\n`
+      + existLine + `\n确认写入？`;
     if(!window.confirm(msg)) { toast("已取消", "", 1400); return; }
+
+    // 已有构件时再问一次"要不要先清理"，把删除这个危险动作单独确认
+    let replace = false;
+    if(dry.existing_tagged > 0){
+      replace = window.confirm(
+        `是否先删除那 ${dry.existing_tagged} 个旧构件再建？\n\n`
+        + `· 确定 = 先清理再建（推荐，避免两份叠加）\n`
+        + `· 取消 = 直接叠加建一份新的\n\n`
+        + `只删带 revit-wy 标记的构件，手工建的不会被动。`);
+    }
 
     // 第二段：真写
     const real = await (await fetch("/api/build", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({dry_run:false, confirm:true})
+      body: JSON.stringify({dry_run:false, confirm:true, replace_existing:replace})
     })).json();
     if(!real.ok){
       toast("写入失败：" + esc(real.error || (real.result&&real.result.errors||[]).slice(0,2).join("; ")), "err", 8000);
@@ -680,6 +697,7 @@ async function doBuild(){
     const r = real.result || {};
     const made = r.created || {};
     toast(`写入完成 ｜ 墙 ${made.walls||0} 柱 ${made.columns||0} 门 ${made.doors||0} 窗 ${made.windows||0}`
+      + (real.deleted ? ` ｜ 已清理旧构件 ${real.deleted} 个` : "")
       + (r.warnings && r.warnings.length ? ` ｜ ${r.warnings.length} 条警告` : ""), "ok", 5000);
     loadDiff();
   }catch(e){ toast("请求失败："+e.message, "err"); }

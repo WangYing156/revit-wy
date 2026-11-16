@@ -19,6 +19,7 @@ IR 里的 id 是每次运行随机生成的（`wall-3f2a1c9e04`），两次构�
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -93,6 +94,8 @@ class ChangeSet:
     unchanged: Dict[str, int] = field(default_factory=dict)
     # 同一位置但尺寸/厚度变化的，单列为 modified
     modified: Dict[str, List[Dict]] = field(default_factory=dict)
+    # 检测到的整体平移（None 表示没有平移或已对齐）
+    aligned: Optional[Dict[str, float]] = None
 
     def summary(self) -> Dict[str, Any]:
         return {
@@ -104,6 +107,7 @@ class ChangeSet:
             "total_removed": sum(len(v) for v in self.removed.values()),
             "total_modified": sum(len(v) for v in self.modified.values()),
             "total_unchanged": sum(self.unchanged.values()),
+            "aligned": self.aligned,
         }
 
     def to_dict(self) -> Dict[str, Any]:
@@ -112,6 +116,7 @@ class ChangeSet:
             "removed": self.removed,
             "modified": self.modified,
             "unchanged": self.unchanged,
+            "aligned": self.aligned,
             "summary": self.summary(),
         }
 
@@ -132,14 +137,155 @@ def _center_of(kind: str, e: Dict[str, Any]) -> Optional[Point]:
     return None
 
 
+# ------------------------------------------------------------------ 整体平移检测
+def _shape_key(kind: str, e: Dict[str, Any], tol: float = 5.0):
+    """只描述"形状"，不含绝对位置。用于跨位置配对。
+
+    整体平移会破坏所有位置签名，但形状不变——所以先用形状配对，
+    再统计配对得到的位移向量，取众数即为全局平移量。
+    """
+    try:
+        if kind in ("walls", "beams"):
+            ax, ay = float(e["start"][0]), float(e["start"][1])
+            bx, by = float(e["end"][0]), float(e["end"][1])
+            length = ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5
+            # 角度归一到 [0,180)，方向无关
+            ang = math.degrees(math.atan2(by - ay, bx - ax)) % 180.0
+            th = e.get("thickness_mm", e.get("b_mm", 0))
+            return ("L", _q(length, tol), _q(ang, 1.0), _q(th, 5))
+        if kind == "columns":
+            return ("C", _q(e.get("b_mm", 0), 5), _q(e.get("h_mm", 0), 5),
+                    _q(float(e.get("rotation_deg", 0)) % 90.0, 2))
+        if kind in ("doors", "windows"):
+            return ("O", e.get("kind", "door"), _q(e.get("width_mm", 0), 5),
+                    _q(e.get("height_mm", 0), 5))
+        if kind == "slabs":
+            pts = [(_q(float(p[0]), tol), _q(float(p[1]), tol))
+                   for p in (e.get("boundary") or [])]
+            if len(pts) >= 2:
+                # 用轮廓相对首点的形状向量 + 边数描述
+                x0, y0 = pts[0]
+                rel = sorted((x - x0, y - y0) for x, y in pts)
+                return ("S", len(pts), _hash(rel), _q(e.get("thickness_mm", 0), 5))
+    except (KeyError, IndexError, TypeError, ValueError):
+        pass
+    return None
+
+
+def detect_translation(old: Dict[str, Any], new: Dict[str, Any],
+                       tol_mm: float = 5.0, snap_mm: float = 10.0,
+                       max_pairs_per_group: int = 400,
+                       min_votes_ratio: float = 0.25) -> Optional[Tuple[float, float]]:
+    """检测两份 IR 之间的整体平移量 (dx, dy)。
+
+    算法（投票法）：
+      1. 按"形状键"把构件分组（形状键不含绝对位置）
+      2. 同组的旧/新构件两两配对，算位移向量，量化到 snap_mm 后计票
+      3. 得票最多的偏移即为全局平移；票数占比不足则判为"不是整体平移"
+
+    为什么用投票而不是直接比 bbox/质心：
+      改图时可能同时新增/删除了构件，质心会被拉偏；投票只看"多数构件的
+      一致位移"，对增减构件免疫。
+    """
+    votes: Dict[Tuple[int, int], int] = {}
+    total_pairs = 0
+
+    for kind in SIGNERS:
+        old_items = old.get(kind) or []
+        new_items = new.get(kind) or []
+        if not old_items or not new_items:
+            continue
+
+        groups_old: Dict[Any, List[Dict]] = {}
+        for e in old_items:
+            k = _shape_key(kind, e, tol_mm)
+            if k is not None:
+                groups_old.setdefault(k, []).append(e)
+        groups_new: Dict[Any, List[Dict]] = {}
+        for e in new_items:
+            k = _shape_key(kind, e, tol_mm)
+            if k is not None:
+                groups_new.setdefault(k, []).append(e)
+
+        for key, olds in groups_old.items():
+            news = groups_new.get(key)
+            if not news:
+                continue
+            # 限制配对数量，避免 O(n²) 爆掉（同形状构件通常不多）
+            for oe in olds[:max_pairs_per_group]:
+                oc = _center_of(kind, oe)
+                if oc is None:
+                    continue
+                for ne in news[:max_pairs_per_group]:
+                    nc = _center_of(kind, ne)
+                    if nc is None:
+                        continue
+                    dx = ne_round(nc[0] - oc[0], snap_mm)
+                    dy = ne_round(nc[1] - oc[1], snap_mm)
+                    votes[(dx, dy)] = votes.get((dx, dy), 0) + 1
+                    total_pairs += 1
+
+    if total_pairs == 0 or not votes:
+        return None
+
+    (bx, by), count = max(votes.items(), key=lambda kv: kv[1])
+    ratio = count / max(1, total_pairs)
+    if ratio < min_votes_ratio:
+        return None
+    # 票键是"量化后的整数格号"，必须乘回 snap_mm 才是真实位移（mm）
+    real_dx, real_dy = bx * snap_mm, by * snap_mm
+    if abs(real_dx) < snap_mm and abs(real_dy) < snap_mm:
+        return None          # 平移量可忽略
+    return (float(real_dx), float(real_dy))
+
+
+def ne_round(v: float, snap: float) -> int:
+    """四舍五入到 snap 的整数倍（返回整数便于做字典键）。"""
+    return int(round(v / snap))
+
+
+def translate_ir(ir: Dict[str, Any], dx: float, dy: float) -> Dict[str, Any]:
+    """返回平移后的 IR 副本（不修改入参）。"""
+    import copy
+    out = copy.deepcopy(ir)
+
+    def mv_pt(p):
+        return [float(p[0]) + dx, float(p[1]) + dy]
+
+    for w in out.get("walls") or []:
+        w["start"], w["end"] = mv_pt(w["start"]), mv_pt(w["end"])
+    for b in out.get("beams") or []:
+        b["start"], b["end"] = mv_pt(b["start"]), mv_pt(b["end"])
+    for c in out.get("columns") or []:
+        c["center"] = mv_pt(c["center"])
+    for k in ("doors", "windows"):
+        for o in out.get(k) or []:
+            o["center"] = mv_pt(o["center"])
+    for s in out.get("slabs") or []:
+        s["boundary"] = [mv_pt(p) for p in s.get("boundary") or []]
+    for g in out.get("grids") or []:
+        g["start"], g["end"] = mv_pt(g["start"]), mv_pt(g["end"])
+    return out
+
+
 def compare(old: Dict[str, Any], new: Dict[str, Any],
-            tol_mm: float = 2.0, move_tol_mm: float = 300.0) -> ChangeSet:
+            tol_mm: float = 2.0, move_tol_mm: float = 300.0,
+            auto_align: bool = True) -> ChangeSet:
     """比对两份 IR。
 
     move_tol_mm：同一类构件在同一位置附近（默认 300mm）但签名不同，视为"改了尺寸/角度"，
     而不是"删一个加一个"。这样报错更贴近人的直觉。
+
+    auto_align：检测到整体平移（如坐标系变更、图纸重新定位）时自动对齐后再比对。
+    不做这一步的话，"整张图平移 1000mm" 会被报成"全部删除 + 全部新增"，
+    数字巨大且完全误导。
     """
     cs = ChangeSet()
+    if auto_align:
+        off = detect_translation(old, new, tol_mm=max(tol_mm, 5.0))
+        if off is not None:
+            cs.aligned = {"dx_mm": off[0], "dy_mm": off[1]}
+            old = translate_ir(old, off[0], off[1])
     for kind, signer in SIGNERS.items():
         a_list = old.get(kind) or []
         b_list = new.get(kind) or []

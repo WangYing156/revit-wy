@@ -1,6 +1,8 @@
 """revit-wy 命令行：把整条流水线拆成可单步调试的 6 个命令。
 
     revit-wy doctor                         环境自检
+    revit-wy dwg       a.dwg                 ★一键：DWG→构件台账（五阶段）
+    revit-wy saving    a.ir.json             ★减负估算：省多少工时
     revit-wy dwg2dxf  <dir>                 批量 DWG→DXF（accoreconsole）
     revit-wy scan      a.dxf                图纸体检
     revit-wy review    a.dxf -p arch        生成“数模对照”确认单  ← 需求1
@@ -175,15 +177,40 @@ def cmd_build(args) -> int:
         print(_c("err", f"--auto 模式下仍有 {len(unresolved)} 个图层未确认，已中止"))
         return 3
 
-    if args.dry_run or not args.send:
-        print(_c("warn", "\n干跑：未写入 Revit。确认后加 --send"))
-        return 0
-
+    # 干跑也要连一下 Revit：不连就不知道模型里已有多少构件，
+    # 也就没法告诉用户"这次会叠加"——那等于让用户在黑暗里按发送。
+    existing = 0
     try:
         with RevitBridge(args.host, args.port) as b:
-            res = b.build_ir(model.to_dict(), dry_run=False, auto_save=not args.no_save)
+            existing = int(b.status().get("revit_wy_tagged", 0) or 0)
+    except Exception as ex:
+        if args.send:
+            print(_c("err", f"连不上 Revit 插件：{ex}"))
+            return 4
+        print(_c("dim", f"  （未连上 Revit：{ex}；跳过已有构件核对）"))
+
+    if existing and not args.replace:
+        print(_c("warn", f"\n  模型里已有 {existing} 个上次翻模的构件。"))
+        print(_c("warn", "  本次不删除它们，会叠加两份；要替换请加 --replace"))
+
+    if args.dry_run or not args.send:
+        print(_c("warn", "\n干跑：未写入 Revit。"
+                         + ("确认后加 --send" if not existing else "确认后加 --send --replace")))
+        return 0
+
+    deleted = 0
+    try:
+        with RevitBridge(args.host, args.port) as b:
+            if args.replace and existing:
+                deleted = int((b.delete_tagged() or {}).get("deleted", 0))
+                print(_c("dim", f"  已清理上次翻模构件 {deleted} 个"
+                                f"（仅带 revit-wy 标记的，手工构件不受影响）"))
+            res = b.build_ir(model.to_dict(), dry_run=False,
+                             auto_save=not args.no_save)
     except Exception as ex:
         print(_c("err", f"写入 Revit 失败：{ex}"))
+        if deleted:
+            print(_c("err", f"注意：旧构件已删除 {deleted} 个，模型目前是空的，请重跑"))
         return 4
     _print(res)
     return 0
@@ -205,6 +232,114 @@ def cmd_panel(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ dwg（一键）
+STAGE_CN = {"convert": "转换 DWG→DXF", "scan": "图纸体检", "review": "数模对照",
+            "clean": "图纸清洗", "build": "生成构件"}
+
+
+def cmd_dwg(args) -> int:
+    """DWG 优先的一键翻模（只到构件台账，写 Revit 仍走 build --send）。"""
+    from .dwg_pipeline import run_dwg
+
+    src = Path(args.path)
+    if src.is_dir():
+        from .dwg_pipeline import run_folder
+        r = run_folder(src, args.profile, args.out,
+                       pattern="*.dxf" if args.dxf_only else "*.dwg")
+        _print({k: r[k] for k in ("total", "ok", "failed")})
+        for row in r["results"]:
+            mark = _c("ok", "✔") if row["ok"] else _c("err", "✘")
+            print(f"  {mark} {Path(row['source']).name}  {row['counts'] or row['blockers']}")
+        return 0 if r["failed"] == 0 else 1
+
+    r = run_dwg(src, profile=args.profile, out_dir=args.out,
+                accoreconsole=args.accoreconsole, base_level=args.base_level,
+                max_manual_review=args.max_manual_review)
+
+    print(_c("h", f"\n  {src.name}  →  {args.profile}"))
+    for st in r.stages:
+        mark = _c("ok", "✔") if st.ok else _c("err", "✘")
+        name = STAGE_CN.get(st.name, st.name)
+        line = f"  {mark} {name:<14}{st.seconds:>6.2f}s"
+        if st.note:
+            line += f"   {_c('dim', st.note)}"
+        print(line)
+
+    if r.ok:
+        c = r.counts
+        print(_c("ok", f"\n  构件台账：墙 {c['walls']}｜柱 {c['columns']}｜梁 {c['beams']}"
+                       f"｜门 {c['doors']}｜窗 {c['windows']}｜板 {c['slabs']}"
+                       f"｜轴网 {c['grids']}｜标高 {c['levels']}"))
+        print(_c("dim", f"  数模对照：{r.review.get('markdown','')}"))
+        print(_c("dim", f"  构件清单：{r.ir_path}"))
+        sv = r.saving.get("seconds", {})
+        if sv:
+            print(f"  减负估算：手工 {sv['manual']/3600:.2f}h → 净省 "
+                  f"{sv['net_saving']/3600:.2f}h（{r.saving['saving_pct']}%，"
+                  f"明细 revit-wy saving <ir>）")
+        for n in r.next_steps:
+            print(f"   · {n}")
+        if args.json:
+            _print(r.as_dict())
+        return 0
+
+    print(_c("err", "\n  流水线中断，需要人工处理："))
+    for b in r.blockers:
+        print(f"   ! {b}")
+    for n in r.next_steps:
+        print(f"   · {n}")
+    if args.json:
+        _print(r.as_dict())
+    return 2
+
+
+# ------------------------------------------------------------------ saving
+def cmd_saving(args) -> int:
+    """把构件台账换算成工时账 —— 对领导讲减负时用这张表。"""
+    from .effort import batch_estimate, estimate, load_baseline, write_markdown
+
+    rows: List[Dict[str, Any]] = []
+    for path in args.ir:
+        try:
+            data = json.loads(Path(path).read_text(encoding="utf-8"))
+        except Exception as ex:
+            print(_c("err", f"读不了 {path}: {ex}"))
+            return 2
+        counts = {k: len(data.get(k) or []) for k in
+                  ("levels", "grids", "walls", "columns", "beams",
+                   "doors", "windows", "slabs")}
+        rows.append({"drawing": Path(path).stem, "counts": counts,
+                     "manual_review_layers": 0})
+
+    if not rows:
+        print(_c("err", "给一个 IR 文件：revit-wy saving model.ir.json"))
+        return 2
+
+    baseline, src = load_baseline(args.baseline)
+    rep = (estimate(rows[0]["counts"], rows[0]["drawing"],
+                    baseline=baseline, first_time=args.first_time).as_dict()
+           if len(rows) == 1 else batch_estimate(rows, baseline=baseline))
+
+    sec, days = rep["seconds"], rep["days"]
+    print(_c("h", f"\n  减负估算（工时基准：{src}）"))
+    print(f"  手工建模      {sec['manual']/3600:>7.2f} 小时   {days['manual']:>5.2f} 人天")
+    print(f"  AI 处理       {sec['ai']/60:>7.1f} 分钟")
+    print(f"  人工复核      {sec['review']/60:>7.1f} 分钟")
+    print(f"  一次性投入    {sec['setup']/60:>7.1f} 分钟")
+    color = "ok" if rep["worth_it"] else "warn"
+    print(_c(color, f"  净节省        {sec['net_saving']/3600:>7.2f} 小时   "
+                    f"{days['net_saving']:>5.2f} 人天   （{rep['saving_pct']}%）"))
+    if not rep["worth_it"]:
+        print(_c("dim", "  （单张小图首图可能不划算：规则调校是一次性的，后续复用）"))
+
+    if args.md:
+        p = write_markdown(rep, args.md)
+        print(_c("dim", f"\n  Markdown 报告：{p}"))
+    if args.json:
+        _print(rep)
+    return 0
+
+
 def cmd_status(args) -> int:
     _print(probe(args.host, args.port))
     return 0
@@ -220,6 +355,27 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--port", type=int, default=48880)
     d.add_argument("--allow-offline", action="store_true")
     d.set_defaults(func=cmd_doctor)
+
+    sv = sub.add_parser("saving", help="★减负估算：把构件台账换算成工时账")
+    sv.add_argument("ir", nargs="+", help="IR json 文件（可多个，自动汇总）")
+    sv.add_argument("--baseline", default="", help="自定义工时基准 YAML")
+    sv.add_argument("--first-time", action="store_true", default=False,
+                    help="算上首次规则调校成本（默认算后续复用）")
+    sv.add_argument("--md", default="", help="输出 Markdown 报告路径")
+    sv.add_argument("--json", action="store_true")
+    sv.set_defaults(func=cmd_saving)
+
+    w = sub.add_parser("dwg", help="★一键：DWG→构件台账（转换/体检/对照/清洗/建构件）")
+    w.add_argument("path", help="DWG 或 DXF 文件，也可以是一个目录（批量）")
+    w.add_argument("-p", "--profile", default="arch", choices=["arch", "struct", "mep"])
+    w.add_argument("--out", default="", help="工作目录，默认 ~/.revit-wy/work/<图名>")
+    w.add_argument("--accoreconsole", default="")
+    w.add_argument("--base-level", default="")
+    w.add_argument("--max-manual-review", type=int, default=0,
+                   help="允许的待确认图层数上限，默认 0（宁停不乱建）")
+    w.add_argument("--dxf-only", action="store_true", help="目录模式下只处理 DXF")
+    w.add_argument("--json", action="store_true", help="额外打印完整 JSON")
+    w.set_defaults(func=cmd_dwg)
 
     c = sub.add_parser("dwg2dxf", help="DWG 批量转 DXF")
     c.add_argument("folder")
@@ -259,6 +415,8 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--auto", action="store_true", help="零待确认图层才继续")
     b.add_argument("--no-cleanup", action="store_true")
     b.add_argument("--no-save", action="store_true")
+    b.add_argument("--replace", action="store_true",
+                   help="写入前清理上一次翻模构件（靠 revit-wy 标记，不动手工构件）")
     b.add_argument("--host", default="127.0.0.1")
     b.add_argument("--port", type=int, default=48880)
     b.set_defaults(func=cmd_build)

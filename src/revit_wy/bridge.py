@@ -152,6 +152,16 @@ class RevitBridge:
     def create_slabs(self, slabs: List[Dict]) -> Dict[str, Any]:
         return self.call("create_slabs", {"slabs": slabs})
 
+    def delete_tagged(self) -> Dict[str, Any]:
+        """删除上一次翻模生成的构件（按 Comments 的 revit-wy: 标记，不动手工构件）。"""
+        return self.call("delete_tagged", {})
+
+    def select_by_tags(self, ids: List[str],
+                       kinds: Optional[List[str]] = None) -> Dict[str, Any]:
+        """按 IR 构件 id 在 Revit 里选中并缩放（浏览器工作台联动用）。"""
+        return self.call("select_by_tags", {"ids": ids, "kinds": kinds or []},
+                         timeout=60)
+
     def build_ir(self, ir: Dict[str, Any], steps: Optional[List[str]] = None,
                  dry_run: bool = False, auto_save: bool = True,
                  timeout: Optional[float] = None) -> Dict[str, Any]:

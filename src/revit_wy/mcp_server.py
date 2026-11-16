@@ -287,37 +287,116 @@ def rwy_prepare_build(path: str, profile: str = "arch",
 
 
 @mcp.tool()
+def rwy_dwg_to_model(path: str, profile: str = "arch",
+                     out_dir: str = "",
+                     max_manual_review: int = 0,
+                     base_level: str = "") -> Dict[str, Any]:
+    """【一步到位】DWG（或 DXF）→ 构件台账，全程自动，只在必须人决策时停下。
+
+    这是「DWG 优先翻模」的主入口。内部固定五步：转换 → 体检 → 数模对照 →
+    清洗 → 建 IR，并返回**每一阶段**的结果。相比让 AI 依次调用
+    rwy_dwg2dxf / rwy_scan_drawing / rwy_review_mapping / rwy_prepare_build，
+    少 3 次编排机会，出错率显著下降（见 docs/08 的 L2 断崖）。
+
+    只在两种情况下停下并把问题交给调用方：
+      · 有图层无法自动归类（默认 max_manual_review=0，宁停不乱建）
+      · 清洗后提取不到任何构件
+
+    成功后 IR 已存入会话，可直接 rwy_build(dry_run=true) 看将建什么。
+    """
+    from .dwg_pipeline import run_dwg
+    try:
+        res = run_dwg(path, profile=profile, out_dir=out_dir,
+                      mapper=_mapper(profile), rules=_rules(),
+                      base_level=base_level,
+                      max_manual_review=int(max_manual_review))
+    except Exception as ex:
+        return _err(f"{type(ex).__name__}: {ex}")
+
+    d = res.as_dict()
+    if not res.ok:
+        return _err(
+            "流水线未走完，需人工介入",
+            stopped_at=next((s["name"] for s in d["stages"] if not s["ok"]), "unknown"),
+            blockers=res.blockers, next_steps=res.next_steps,
+            stages=d["stages"], review=res.review,
+        )
+    _S["ir"] = res.model
+    return _ok(counts=res.counts, stages=d["stages"], review=res.review,
+               cleanup=res.cleanup, ir_file=res.ir_path,
+               next_steps=res.next_steps)
+
+
+@mcp.tool()
 def rwy_build(dry_run: bool = True, confirm: bool = False,
               steps: Optional[List[str]] = None,
               host: str = "127.0.0.1", port: int = 48880,
-              auto_save: bool = True) -> Dict[str, Any]:
+              auto_save: bool = True,
+              replace_existing: bool = False) -> Dict[str, Any]:
     """把 IR 写入 Revit 2022。默认 dry_run=true 只校验不创建。
 
     真正落模型必须 dry_run=false 且 confirm=true（双重保险，防止 LLM 误触发）。
+
+    `replace_existing`：写入前先删除上一次翻模生成的构件（靠 Comments 里的
+    `revit-wy:` 标记精确识别，**不会动手工建的构件**）。
+    改图后重翻时必须打开它，否则同名构件会叠加两份。
+    默认关闭——删除是比新增危险得多的动作，必须显式要求。
     """
     model = _S.get("ir")
     if model is None:
-        return _err("还没有 IR，请先 rwy_prepare_build")
+        return _err("还没有 IR，请先 rwy_prepare_build 或 rwy_dwg_to_model")
     ir = model.to_dict()
-    if dry_run:
-        return _ok(
-            dry_run=True, will_create=model.counts(),
-            would_delete=0,
-            check=[
-                "标高已存在或可创建", "网格名称不与现有冲突",
-                "墙类型将按厚度自动匹配/创建",
-                "门窗尝试按邻近墙选宿主，失败则跳过并记录",
-            ],
-            note="确认无误后调用 rwy_build(dry_run=false, confirm=true)",
-        )
-    if not confirm:
-        return _err("安全闸未开：必须同时传 dry_run=false 且 confirm=true")
+
+    # 干跑也要连一次 Revit：否则"将删除几个"只能瞎写 0（早期版本就是这么错的）
+    existing = 0
+    reachable = True
+    probe_err = ""
     try:
         with RevitBridge(host, int(port)) as b:
+            st = b.status()
+            existing = int(st.get("revit_wy_tagged", 0) or 0)
+    except Exception as ex:
+        reachable = False
+        probe_err = str(ex)
+
+    would_delete = existing if replace_existing else 0
+
+    if dry_run:
+        check = [
+            "标高已存在或可创建", "网格名称不与现有冲突",
+            "墙类型将按厚度自动匹配/创建",
+            "门窗尝试按邻近墙选宿主，失败则跳过并记录",
+        ]
+        if not reachable:
+            check.append(f"⚠ 连不上 Revit（{probe_err}）：无法核对已有构件数")
+        if existing and not replace_existing:
+            check.append(
+                f"⚠ 模型里已有 {existing} 个上次翻模的构件，本次不会删除，"
+                "会与它们叠加；要替换请传 replace_existing=true")
+        note = ("确认无误后调用 rwy_build(dry_run=false, confirm=true"
+                + (", replace_existing=true)" if replace_existing else ")"))
+        return _ok(
+            dry_run=True, will_create=model.counts(),
+            would_delete=would_delete,
+            existing_tagged=existing,
+            revit_reachable=reachable,
+            check=check, note=note,
+        )
+
+    if not confirm:
+        return _err("安全闸未开：必须同时传 dry_run=false 且 confirm=true")
+
+    deleted = 0
+    try:
+        with RevitBridge(host, int(port)) as b:
+            if replace_existing and existing:
+                deleted = int((b.delete_tagged() or {}).get("deleted", 0))
             res = b.build_ir(ir, steps=steps, dry_run=False, auto_save=auto_save)
     except Exception as ex:
+        if deleted:
+            return _err(f"已删除 {deleted} 个旧构件，但写入失败：{ex}")
         return _err(str(ex))
-    return _ok(result=res)
+    return _ok(result=res, deleted=deleted)
 
 
 @mcp.tool()

@@ -108,3 +108,67 @@ class TestBridge:
         for w in model.walls:
             assert w.base_level in names
             assert w.top_level in names
+
+
+# ============================================================ 重复翻模安全
+class TestReplaceExisting:
+    """v0.1 的严重缺口：改图后重翻会叠加两份构件。
+    这里锁定新契约——干跑必须报出已有构件数，真写必须能精确清理。"""
+
+    def _prep(self, monkeypatch, port, arch_dxf, tmp_path):
+        from revit_wy import mcp_server as M
+        monkeypatch.setattr(M, "WORK_DIR", tmp_path / "work")
+        M._S["ir"] = None
+        M._S["mapper"] = None
+        self.port = port
+        # mock 的状态是模块级共享的，每个用例从干净模型开始，避免互相污染
+        import mock_revit as _mr
+        _mr.STATE.__init__()
+        assert M.rwy_dwg_to_model(str(arch_dxf), "arch")["ok"]
+
+    def test_干跑报已有构件数与可删除数(self, monkeypatch, mock_server, arch_dxf, tmp_path):
+        from revit_wy import mcp_server as M
+        self._prep(monkeypatch, mock_server, arch_dxf, tmp_path)
+        d1 = M.rwy_build(dry_run=True, port=self.port)
+        assert d1["ok"] and d1["revit_reachable"] is True
+        assert d1["existing_tagged"] == 0
+        assert d1["would_delete"] == 0
+
+    def test_写了之后再干跑会警告叠加(self, monkeypatch, mock_server, arch_dxf, tmp_path):
+        from revit_wy import mcp_server as M
+        self._prep(monkeypatch, mock_server, arch_dxf, tmp_path)
+        assert M.rwy_build(dry_run=False, confirm=True, port=self.port)["ok"]
+        d2 = M.rwy_build(dry_run=True, port=self.port)
+        assert d2["existing_tagged"] > 0
+        assert any("叠加" in c for c in d2["check"])
+
+    def test_replace_existing真正清掉旧的(self, monkeypatch, mock_server, arch_dxf, tmp_path):
+        from revit_wy import mcp_server as M
+        self._prep(monkeypatch, mock_server, arch_dxf, tmp_path)
+        assert M.rwy_build(dry_run=False, confirm=True, port=self.port)["ok"]
+        n = M.rwy_build(dry_run=True, port=self.port)["existing_tagged"]
+        r = M.rwy_build(dry_run=False, confirm=True, replace_existing=True, port=self.port)
+        assert r["ok"] and r["deleted"] == n
+        # 清理后不应残留旧构件（新写的那些是本次的）
+        after = M.rwy_build(dry_run=True, port=self.port)["existing_tagged"]
+        assert after > 0 and after != n + n
+
+    def test_未确认时绝不删除(self, monkeypatch, mock_server, arch_dxf, tmp_path):
+        from revit_wy import mcp_server as M
+        self._prep(monkeypatch, mock_server, arch_dxf, tmp_path)
+        assert M.rwy_build(dry_run=False, confirm=True, port=self.port)["ok"]
+        before = M.rwy_build(dry_run=True, port=self.port)["existing_tagged"]
+        bad = M.rwy_build(dry_run=False, confirm=False, replace_existing=True, port=self.port)
+        assert bad["ok"] is False
+        assert M.rwy_build(dry_run=True, port=self.port)["existing_tagged"] == before
+
+    def test_连不上Revit时如实说不知道(self, monkeypatch, arch_dxf, tmp_path):
+        """关键诚实性：连不上就不能报 existing_tagged=0。"""
+        from revit_wy import mcp_server as M
+        M._S["ir"] = None
+        M._S["mapper"] = None
+        monkeypatch.setattr(M, "WORK_DIR", tmp_path / "work")
+        assert M.rwy_dwg_to_model(str(arch_dxf), "arch")["ok"]
+        d = M.rwy_build(dry_run=True, port=_free_port())     # 没人监听
+        assert d["ok"] and d["revit_reachable"] is False
+        assert any("连不上" in c for c in d["check"])

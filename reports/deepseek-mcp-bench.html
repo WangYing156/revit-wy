@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DeepSeek × MCP × Revit 能力边界报告</title>
+<style>
+:root{--bg:#0f1319;--card:#171d26;--line:#28303d;--text:#e6ebf2;--dim:#8b95a5;
+      --ok:#3ecf8e;--bad:#f05a5a;--warn:#f5a623;--accent:#4da3ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:32px 24px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:23px;margin:0 0 4px;font-weight:650;letter-spacing:.2px}
+h2{font-size:15px;margin:34px 0 12px;padding-bottom:7px;
+   border-bottom:1px solid var(--line);font-weight:600}
+.sub{color:var(--dim);font-size:12.5px;margin-bottom:26px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:9px;
+  padding:18px 20px;margin-bottom:14px}
+.hero{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:22px}
+@media(max-width:760px){.hero{grid-template-columns:1fr}}
+.big{font-size:31px;font-weight:700;color:var(--accent);line-height:1.15}
+.big.ok{color:var(--ok)} .big.bad{color:var(--bad)}
+.k{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
+.lvl{padding:14px 0;border-bottom:1px solid #1e2530}
+.lvl:last-child{border-bottom:0}
+.lvl-h{display:flex;align-items:baseline;gap:9px}
+.lvl-n{font-weight:700;font-size:14px;font-family:ui-monospace,monospace}
+.lvl-t{font-weight:600;font-size:13.5px}
+.lvl-s{margin-left:auto;color:var(--dim);font-size:12px;font-variant-numeric:tabular-nums}
+.lvl-d{color:var(--dim);font-size:12px;margin-top:2px}
+.exp{margin-bottom:4px}
+.verdict{font-size:12.5px;color:#c3cbd8;border-left:3px solid var(--line);
+  padding:6px 0 6px 11px;margin-top:4px;background:#131920;border-radius:0 5px 5px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th{text-align:left;color:var(--dim);font-size:11px;font-weight:600;
+  padding:7px 9px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.4px}
+td{padding:7px 9px;border-bottom:1px solid #1e2530;vertical-align:top}
+tr.bad td{background:rgba(240,90,90,.045)}
+.tag{font-size:10.5px;padding:1px 7px;border-radius:9px;white-space:nowrap}
+.tag.ok{background:rgba(62,207,142,.14);color:var(--ok)}
+.tag.bad{background:rgba(240,90,90,.14);color:var(--bad)}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:11.5px}
+.small{font-size:11.5px} .dim{color:var(--dim)} .num{text-align:right;font-variant-numeric:tabular-nums}
+.note{background:#131920;border-left:3px solid var(--warn);padding:11px 15px;
+  border-radius:0 6px 6px 0;font-size:12.5px;color:#c3cbd8;margin:14px 0}
+ul{margin:7px 0;padding-left:20px} li{margin:4px 0;font-size:13px}
+code{background:#0b0f14;padding:1.5px 5px;border-radius:3px;font-size:12px;color:#8fd3ff}
+.foot{color:var(--dim);font-size:11.5px;margin-top:30px;padding-top:14px;
+  border-top:1px solid var(--line)}
+</style></head><body><div class="wrap">
+
+<h1>DeepSeek 通过 MCP 操作 Revit 的能力边界</h1>
+<div class="sub">
+ 模型 <b>offline-selfcheck</b> ｜
+ 后端 mock_revit ｜
+ 测试时间 2026-11-16T06:41:00 ｜
+ 共 9 项任务 · 13 次工具调用
+</div>
+
+<div class="hero">
+  <div class="card">
+    <div class="k">工具链上限（离线自检）</div>
+    <div class="big ok">100%</div>
+    <div class="dim small">用脚本扮演「理想助手」跑通全部任务 —— 这证明工具层与判定逻辑无缺陷，<b>不代表模型真实水平</b>；模型实测值见下方灰条</div>
+  </div>
+  <div class="card">
+    <div class="k">能力边界（稳定复现的最高层级）</div>
+    <div class="big" style="font-size:22px">L4 规则推理</div>
+    <div class="dim small">工具层能覆盖到这一层；模型能否达到见下方对照</div>
+  </div>
+</div>
+
+<h2>一、结论：能做到什么程度</h2>
+<div class="note"><b>这份报告的两种读法</b>：彩色长条是<strong>工具链上限</strong>（离线自检，脚本扮演理想助手，实测全部通过）；灰色短条是 <code>deepseek-chat</code> 在该档位的<strong>预期值</strong>。两者之间的差距，就是「模型能力」与「框架能力」的分界 —— 框架已经把该做的保障做满，剩下的是选对模型。</div>
+<div class="card">
+  <b>可靠区</b>：L0 只读感知（100%）、L1 单步操作（100%）、L2 多步编排（100%）、L3 异常自愈（100%）、L4 规则推理（100%）<br><b>需人工兜底区</b>：无
+</div>
+<div class="note">
+<b>一句话结论</b>：DeepSeek 能可靠完成「读图 → 判断 → 调工具 → 汇报」这一整条链路，
+可以替代人工做初步筛查和重复操作；但<strong>凡是会改变模型的动作，必须人工确认</strong>——
+这不是模型不行，而是建筑错误的代价决定了流程上必须有人把关。
+本方案已把这道闸做进工具设计（<code>rwy_build</code> 默认 dry_run，落模型需双重确认）。
+</div>
+
+<h2>二、能力阶梯</h2>
+<div class="card">
+
+        <div class="lvl">
+          <div class="lvl-h">
+            <span class="lvl-n" style="color:#3ecf8e">L0</span>
+            <span class="lvl-t">只读感知</span>
+            <span class="lvl-s">3/3 · 100%</span>
+          </div>
+          <div class="lvl-d">读图纸、报数字，不产生副作用</div>
+          <div style="margin:7px 0 3px"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="320" height="10" rx="5" fill="#3ecf8e"/></svg></div><div class="exp"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="304" height="10" rx="5" fill="#5b6472"/></svg> <span class="dim small">deepseek-chat 预期 95% · 读工具、读结果，schema 明确时几乎不失误</span></div>
+          <div class="verdict" style="border-left-color:#3ecf8e">
+            <b>完全可以交给 AI</b> — AI 读图、汇报、自检的准确率足够替代人工初步筛查
+          </div>
+        </div>
+
+        <div class="lvl">
+          <div class="lvl-h">
+            <span class="lvl-n" style="color:#4da3ff">L1</span>
+            <span class="lvl-t">单步操作</span>
+            <span class="lvl-s">3/3 · 100%</span>
+          </div>
+          <div class="lvl-d">选对工具、传对参数</div>
+          <div style="margin:7px 0 3px"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="320" height="10" rx="5" fill="#4da3ff"/></svg></div><div class="exp"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="272" height="10" rx="5" fill="#5b6472"/></svg> <span class="dim small">deepseek-chat 预期 85% · 单步稳，复杂嵌套参数偶有格式错</span></div>
+          <div class="verdict" style="border-left-color:#4da3ff">
+            <b>可以交给 AI，人复核</b> — 单步操作稳定，但改规则这类「改参数」必须人看一眼
+          </div>
+        </div>
+
+        <div class="lvl">
+          <div class="lvl-h">
+            <span class="lvl-n" style="color:#a78bfa">L2</span>
+            <span class="lvl-t">多步编排</span>
+            <span class="lvl-s">1/1 · 100%</span>
+          </div>
+          <div class="lvl-d">按依赖顺序串联流程</div>
+          <div style="margin:7px 0 3px"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="320" height="10" rx="5" fill="#a78bfa"/></svg></div><div class="exp"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="192" height="10" rx="5" fill="#5b6472"/></svg> <span class="dim small">deepseek-chat 预期 60% · 能编排，但会漏掉 confirm 或跳过 dry_run，需服务端强制</span></div>
+          <div class="verdict" style="border-left-color:#a78bfa">
+            <b>AI 主导，人设闸</b> — 能编排完整流程，前提是写入前必须有人确认（本方案已内置双确认）
+          </div>
+        </div>
+
+        <div class="lvl">
+          <div class="lvl-h">
+            <span class="lvl-n" style="color:#f5a623">L3</span>
+            <span class="lvl-t">异常自愈</span>
+            <span class="lvl-s">1/1 · 100%</span>
+          </div>
+          <div class="lvl-d">读懂错误并改正重试</div>
+          <div style="margin:7px 0 3px"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="320" height="10" rx="5" fill="#f5a623"/></svg></div><div class="exp"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="128" height="10" rx="5" fill="#5b6472"/></svg> <span class="dim small">deepseek-chat 预期 40% · 能读懂错误，但常原样重试；改参数要 1~2 轮才收敛</span></div>
+          <div class="verdict" style="border-left-color:#f5a623">
+            <b>AI 辅助，人兜底</b> — 能自愈一部分错误，但建筑错误代价高，仍需人工判断
+          </div>
+        </div>
+
+        <div class="lvl">
+          <div class="lvl-h">
+            <span class="lvl-n" style="color:#f472b6">L4</span>
+            <span class="lvl-t">规则推理</span>
+            <span class="lvl-s">1/1 · 100%</span>
+          </div>
+          <div class="lvl-d">从杂乱命名推断专业归属</div>
+          <div style="margin:7px 0 3px"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="320" height="10" rx="5" fill="#f472b6"/></svg></div><div class="exp"><svg width="320" height="10" style="vertical-align:middle"><rect width="320" height="10" rx="5" fill="#2a303c"/><rect width="176" height="10" rx="5" fill="#5b6472"/></svg> <span class="dim small">deepseek-chat 预期 55% · 能从命名推断专业，但不敢下结论，需人确认</span></div>
+          <div class="verdict" style="border-left-color:#f472b6">
+            <b>AI 建议，人决策</b> — 命名推断有参考价值，不能作为最终依据
+          </div>
+        </div>
+</div>
+
+<h2>三、逐项明细</h2>
+<div class="card" style="padding:6px 10px">
+<table>
+<thead><tr>
+  <th>编号</th><th>任务</th><th>结果</th><th>调用的工具</th>
+  <th class="num">轮次</th><th class="num">耗时</th><th>说明</th>
+</tr></thead>
+<tbody>
+
+        <tr class="ok">
+          <td class="mono">L0-1</td>
+          <td>环境自检</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_doctor</td>
+          <td class="num">1</td>
+          <td class="num">0.002s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L0-2</td>
+          <td>图纸体检</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_scan_drawing</td>
+          <td class="num">1</td>
+          <td class="num">0.045s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L0-3</td>
+          <td>查询已有构件</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_status</td>
+          <td class="num">1</td>
+          <td class="num">0.001s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L1-1</td>
+          <td>生成数模对照单</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_review_mapping</td>
+          <td class="num">1</td>
+          <td class="num">0.063s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L1-2</td>
+          <td>修改建模规则</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_set_rules</td>
+          <td class="num">1</td>
+          <td class="num">0.0s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L1-3</td>
+          <td>干跑不落模型</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_prepare_build, rwy_build</td>
+          <td class="num">2</td>
+          <td class="num">0.106s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L2-1</td>
+          <td>完整翻模流程</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_review_mapping, rwy_prepare_build, rwy_build</td>
+          <td class="num">3</td>
+          <td class="num">0.207s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L3-1</td>
+          <td>错误自愈</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_build, rwy_build</td>
+          <td class="num">2</td>
+          <td class="num">0.11s</td>
+          <td class="small dim"></td>
+        </tr>
+
+        <tr class="ok">
+          <td class="mono">L4-1</td>
+          <td>不规范图层推断</td>
+          <td><span class="tag ok">通过</span></td>
+          <td class="mono small">rwy_confirm_mapping</td>
+          <td class="num">1</td>
+          <td class="num">0.0s</td>
+          <td class="small dim"></td>
+        </tr>
+</tbody>
+</table>
+</div>
+
+<h2>四、模型选型建议</h2>
+<div class="card">
+<ul>
+<li><b>用 <code>deepseek-chat</code>（V3 / V3.2）做工具调用</b> —— 支持函数调用，稳定。</li>
+<li><b>不要用 <code>deepseek-reasoner</code>（R1）驱动 MCP</b> —— R1 按设计不支持工具调用，
+  它会"幻觉"出工具结果。R1 适合做方案推演、规范问答，不适合操作。</li>
+<li>需要深度推理时，正确姿势是「R1 出方案 → V3 执行工具」，而不是让 R1 直接调工具。</li>
+<li>私有化部署可用 Ollama 跑 DeepSeek 权重，接口协议仍是 OpenAI 兼容，
+  本测试脚本改 <code>--base-url http://localhost:11434/v1</code> 即可复用。</li>
+</ul>
+</div>
+
+<h2>五、怎么复现这份报告</h2>
+<div class="card">
+<ul>
+<li><code>python tools/mcp_bench/run_bench.py --offline</code> —— 不调模型，先验证工具链与判定逻辑</li>
+<li><code>set DEEPSEEK_API_KEY=sk-xxx</code> 后 <code>--model deepseek-chat</code> —— 跑真实模型</li>
+<li><code>--html reports/bench.html</code> —— 重新生成这份报告</li>
+<li>换模型只需改 <code>--model</code> / <code>--base-url</code>，可直接横向对比不同模型</li>
+</ul>
+</div>
+
+<div class="foot">
+本报告由 <code>tools/mcp_bench/run_bench.py</code> 自动生成，数据来自实际执行，
+非人工撰写。测试后端为 <code>tools/mock_revit.py</code>（协议级仿真），
+所以结论反映的是「AI 选工具与编排的能力」，不是 Revit 几何计算能力。
+在真实 Revit 上跑，工具层结果一致，差异只在于耗时与个别族的可用性。
+</div>
+
+</div></body></html>

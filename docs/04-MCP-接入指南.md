@@ -103,10 +103,11 @@ WorkBuddy 网页版没有自定义连接器入口，**必须用桌面版**。
 
 ## 四、工具清单与推荐调用顺序
 
-### 4.1 12 个工具
+### 4.1 14 个工具
 
 | # | 工具 | 输入 | 输出要点 |
 |---|---|---|---|
+| 0 | **`rwy_dwg_to_model`** | path(.dwg/.dxf), profile | **★一步到位**：五阶段台账 + 构件统计 + 减负估算；只在必须人决策时停下 |
 | 1 | `rwy_doctor` | host/port | Python/ezdxf/配置/Revit 连通性 |
 | 2 | `rwy_scan_drawing` | path | 单位、图幅、图层清单、图块、异常提示 |
 | 3 | `rwy_review_mapping` | path, profile | **确认单 4 件套** + `need_review` + `can_auto_build` |
@@ -115,7 +116,7 @@ WorkBuddy 网页版没有自定义连接器入口，**必须用桌面版**。
 | 6 | `rwy_set_rules` | overrides{} | 本次会话生效的规则摘要 |
 | 7 | `rwy_save_rules` | path? | 持久化路径 |
 | 8 | `rwy_prepare_build` | path, profile | IR 文件 + 构件统计 + **质量指标** |
-| 9 | `rwy_build` | dry_run, confirm | 创建结果 / 校验清单 |
+| 9 | `rwy_build` | dry_run, confirm, replace_existing | 创建结果 / 校验清单 / **已有构件数** |
 | 10 | `rwy_status` | host/port | Revit 文档、标高、构件数、tag 数 |
 | 11 | `rwy_dwg2dxf` | folder | 批量转换结果 |
 | 12 | `rwy_diff` | next_ir_path | 增量构件数 |
@@ -147,17 +148,22 @@ AI 调 `rwy_prepare_build` → 返回质量指标 → 如果 `unpaired_lines` �
 
 AI 调 `rwy_build(dry_run=false, confirm=true)`。
 
-**改图后**
-> Revit 里先清理上次翻模的构件，然后重新翻一遍。
+**改图后（最省事的说法）**
+> 这张图改了，重新翻一遍，把上次翻的替换掉。
 
-AI 调 `rwy_status` 确认 → 提示你在 Revit 点「清理上次翻模」（或后续版本加 `delete_tagged` 工具暴露）。
+AI 调 `rwy_dwg_to_model` → `rwy_build(dry_run=true)`（干跑会报出 `existing_tagged`
+即模型里已有多少个上次翻模的构件）→ 你确认 → `rwy_build(dry_run=false, confirm=true, replace_existing=true)`。
+
+> ⚠️ `replace_existing` 必须显式传。它只删 **带 `revit-wy:` 标记** 的构件，
+> 工程师手工建的墙不会被误删——但如果有人手工**复制**了工具建的构件，
+> Comments 会被一起复制，那部分也会被删。所以这个参数不设默认值。
 
 ### 4.3 安全闸设计
 
 `rwy_build` 的三重保护，防止 AI 误触发：
 
 ```
-rwy_build()                              → dry_run=true，只返回"将要创建什么"
+rwy_build()                              → dry_run=true，只返回"将要创建什么"+已有构件数
 rwy_build(dry_run=false)                 → ok=false，"安全闸未开"
 rwy_build(dry_run=false, confirm=true)   → 真正写入
 ```
@@ -176,7 +182,7 @@ MCP 进程内保留了本次会话的中间状态（`_S`）：
 | `rules` | 当前规则（含临时覆盖） | 进程内 |
 | `ir` | 最近一次构建的 IR | 进程内，供 `rwy_build` 消费 |
 
-**这意味着 `rwy_build` 必须紧跟 `rwy_prepare_build`**，中间不要重启客户端。
+**这意味着 `rwy_build` 必须紧跟 `rwy_prepare_build` 或 `rwy_dwg_to_model`**，中间不要重启客户端。
 如果重启了，重新调一次 `rwy_prepare_build` 即可（IR 也在磁盘上：`work/<图纸名>/model.ir.json`）。
 
 ---
@@ -221,7 +227,9 @@ MCP 进程内保留了本次会话的中间状态（`_S`）：
 | `rwy_review_mapping` | `revit-wy review a.dxf -p arch` |
 | `rwy_confirm_mapping` | `revit-wy confirm --set "层=wall"` 或 `--review x.csv` |
 | `rwy_prepare_build` | `revit-wy build a.dxf --dry-run` |
-| `rwy_build` | `revit-wy build a.dxf --send` |
+| `rwy_build` | `revit-wy build a.dxf --dry-run`（看）／`--send`（写）／`--send --replace`（替换） |
+| **`rwy_dwg_to_model`** | **`revit-wy dwg a.dwg`** |
+| 减负估算（无对应工具） | `revit-wy saving x.ir.json --md r.md` |
 | `rwy_status` | `revit-wy status` |
 | `rwy_dwg2dxf` | `revit-wy dwg2dxf <目录>` |
 

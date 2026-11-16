@@ -24,8 +24,23 @@ DWG/DXF ──► 清洗分层 ──► 图层→构件映射 ──► 数模�
 
 ## 快速开始
 
+### 最省事：双击
+
+| 文件 | 作用 |
+|---|---|
+| **`一键启动.bat`** | 装环境 → 编译插件 → 配 MCP → 自检 → 开工作台（首次约 3 分钟） |
+| **`一键诊断.bat`** | 出问题双击它，生成 `诊断报告_*.txt` 发给维护者 |
+
+### 命令行
+
 ```powershell
-# 1) 安装（Python 环境 + 插件部署 + MCP 配置）
+# ★ 一条命令：DWG → 构件台账（转换/体检/对照/清洗/建构件，五阶段）
+revit-wy dwg 图纸\F1.dwg
+
+# ★ 减负账：把构件台账换算成省了多少工时
+revit-wy saving 图纸\F1\F1.ir.json --md 减负报告.md
+
+# 分步（排错用）
 .\scripts\install.ps1
 
 # 2) 重启 Revit 2022 → 功能区出现 "revit-wy" → 点「连接状态」
@@ -51,7 +66,27 @@ DWG/DXF ──► 清洗分层 ──► 图层→构件映射 ──► 数模�
 .venv\Scripts\revit-wy build D:\drawings\arch\F1.dxf -p arch --send
 ```
 
-在 Cursor / WorkBuddy 里就是一句话：「帮我翻模 D:\drawings\arch\F1.dxf」。
+在 Cursor / WorkBuddy 里就是一句话：「帮我翻模 D:\drawings\arch\F1.dwg，先干跑」。
+
+> **改图后重翻**：加 `--replace`，先清理上次翻模的构件再建，
+> 避免两份叠加。只删带 `revit-wy` 标记的，手工建的构件不受影响。
+
+---
+
+## 它能帮你省多少
+
+`revit-wy saving` 会算出可核对的工时账（基线在 `config/effort_baseline.yaml`，可改成贵司实测值）：
+
+以一层标准办公楼层（120 墙 / 40 柱 / 60 梁 / 30 门 / 40 窗 / 12 板）为例：
+
+| | 手工 | 用本工具 |
+|---|---|---|
+| 建模 | 约 4.1 小时 | 自动（约 10 秒） |
+| 复核（25% 抽检 + 目视校核） | — | 约 40 分钟 |
+| **合计** | **4.1 小时** | **约 0.6 小时** |
+
+**提效约 84%**，且这个数字刻意压过：复核成本全额计入、不算返工、
+小图首次使用会如实显示为**负收益**（规则调校是一次性成本）。
 
 ---
 
@@ -68,8 +103,11 @@ revit-wy/
 │   ├── report.py                  「数模对照」报告 4 件套
 │   ├── bridge.py                  TCP NDJSON 客户端
 │   ├── autocad.py                 accoreconsole / ODA 批量转 DXF
-│   ├── mcp_server.py              MCP 服务（12 个工具）
-│   └── cli.py                     命令行
+│   ├── dwg_pipeline.py            ★DWG 优先五阶段流水线（阶段台账 + 失败可解释）
+│   ├── effort.py                  ★减负量化（工时基准可改）
+│   ├── diffing.py                 几何签名差异 + 整体平移自动对齐
+│   ├── mcp_server.py              MCP 服务（14 个工具）
+│   └── cli.py                     命令行（11 个子命令）
 ├── addin/RevitWy.Plugin/          Revit 2022 C# 插件（net48）
 │   ├── UI/                         停靠面板（WPF）+ 后端适配层
 │   ├── Core/                       TCP 服务 + ExternalEvent 桥
@@ -83,8 +121,10 @@ revit-wy/
 ├── scripts/                       install.ps1 / build-addin.ps1
 ├── tools/
 │   ├── mock_revit.py              协议仿真（无 Revit 也能测链路）
+│   ├── mcp_bench/                 ★DeepSeek×MCP 能力边界基准 + HTML 报告
 │   └── viewer/                    数模对照可视化预览（Canvas，零依赖）
-├── tests/                         33 个测试
+├── reports/                       能力边界可视化报告（HTML，可直接给领导看）
+├── tests/                         69 个测试
 ├── samples/                       自动生成的样例图纸
 └── docs/                          方案与开发文档
 ```
@@ -126,6 +166,9 @@ revit-wy panel samples\arch_plan.dxf     # → http://127.0.0.1:8770/
 | [docs/04-MCP-接入指南.md](docs/04-MCP-接入指南.md) | Cursor / WorkBuddy 配置、对话脚本 |
 | [docs/05-踩坑与排错.md](docs/05-踩坑与排错.md) | 错误码、排错决策树、已修问题清单 |
 | [docs/06-可视化界面选型与实现.md](docs/06-可视化界面选型与实现.md) | 四种载体对比、WebView2 为何不用、面板实现 |
+| **[docs/07-使用说明与能力清单.md](docs/07-使用说明与能力清单.md)** | **怎么用、能做什么、做不到什么、什么时候会停下来问你** |
+| **[docs/08-DeepSeek能力边界结论.md](docs/08-DeepSeek能力边界结论.md)** | **DeepSeek 走 MCP 能操作到什么程度（含可视化报告）** |
+| [docs/09-补充建议与未考虑到的点.md](docs/09-补充建议与未考虑到的点.md) | 落地一年会踩的坑、值得优先做的三件事 |
 
 ---
 
@@ -166,6 +209,8 @@ C# 插件需在 Windows 上编译：
 | 钢筋、机电建模 | 二期；机电目前只识别隔离 |
 | 出图（视图/标注/明细表） | 一期只建模 |
 | 单张图多楼层自动分层 | 需图框解析，二期 |
+| 专业间碰撞检查 | 各专业分别翻模，需自己在 Revit/Navisworks 里查 |
+| 净高分析、能耗、算量 | 不在一期范围 |
 
 ---
 
