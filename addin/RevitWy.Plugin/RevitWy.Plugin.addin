@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Revit 插件清单。部署到：
+    %APPDATA%\Autodesk\Revit\Addins\2022\RevitWy.Plugin.addin
+    （单用户）或
+    C:\Program Files\Autodesk\Revit 2022\AddIns\RevitWy.Plugin.addin
+    （全机器，需管理员）
+  Assembly 路径必须是绝对路径或相对 .addin 所在目录的相对路径。
+-->
+<RevitAddIns>
+  <AddIn Type="Application">
+    <Name>revit-wy 一键翻模</Name>
+    <Assembly>revit-wy\RevitWy.Plugin.dll</Assembly>
+    <FullClassName>RevitWy.Plugin.WyApp</FullClassName>
+    <ClientId>8f3a7c2e-4d1b-4a6f-9c5e-2b8d7f1a6c30</ClientId>
+    <VendorId>REVITWY</VendorId>
+    <VendorDescription>revit-wy — AutoCAD 到 Revit 2022 一键翻模</VendorDescription>
+  </AddIn>
+</RevitAddIns>

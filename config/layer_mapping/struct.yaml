@@ -1,0 +1,82 @@
+# =============================================================================
+# 图层 → 构件 规范映射（结构施工图）
+# 与建筑共用一套引擎，仅规则集不同；可复制本文件自定义。
+# =============================================================================
+profile: struct
+name: 结构施工图（默认规范映射）
+version: 1
+match_order: [exact, glob, contains, regex, keyword, fuzzy]
+auto_accept: 0.85
+manual_review: 0.55
+fallback_component: manual_review
+
+rules:
+  - component: wall
+    revit_category: OST_Walls
+    name_cn: 剪力墙/砌体墙
+    structural: true
+    priority: 100
+    glob: ["*WALL*", "*墙*", "S-WALL*", "*Q-*", "S-SHEAR*"]
+    contains: ["WALL", "墙", "SHEAR"]
+    keyword: [剪力墙, 墙, 砌体墙, 填充墙]
+    thickness_suffix: '(?i)(?:wall|墙|q)[-_ ]*(\d{2,3})\s*(?:mm)?$'
+    pair: {min_thickness_mm: 60, max_thickness_mm: 800, parallel_tol_deg: 2.0, overlap_min_ratio: 0.35}
+
+  - component: column
+    revit_category: OST_StructuralColumns
+    name_cn: 柱
+    structural: true
+    priority: 120
+    glob: ["*COL*", "*柱*", "S-COL*", "*KZ*", "*GZ*"]
+    contains: ["COL", "柱"]
+    keyword: [框架柱, 构造柱, 柱, 暗柱, KZ, GZ]
+    shape: closed_polyline_bbox
+
+  - component: beam
+    revit_category: OST_StructuralFraming
+    name_cn: 梁
+    structural: true
+    priority: 110
+    glob: ["*BEAM*", "*梁*", "S-BEAM*", "*KL*", "*LL*"]
+    contains: ["BEAM", "梁"]
+    keyword: [框架梁, 次梁, 连梁, 梁, KL, LL]
+    # 梁以双线/单线表达，宽度取配对距离或图层后缀
+    pair: {min_thickness_mm: 100, max_thickness_mm: 1200, parallel_tol_deg: 2.0, overlap_min_ratio: 0.30}
+
+  - component: slab
+    revit_category: OST_Floors
+    name_cn: 板
+    structural: true
+    priority: 90
+    glob: ["*SLAB*", "*板*", "S-SLAB*", "*B-*"]
+    contains: ["SLAB", "板"]
+    keyword: [楼板, 板, 顶板, 底板, 厚板]
+
+  - component: grid
+    revit_category: OST_Grids
+    name_cn: 轴网
+    priority: 130
+    glob: ["*AXIS*", "*GRID*", "*轴线*", "S-GRID*"]
+    contains: ["AXIS", "GRID", "轴线"]
+    keyword: [轴线, 轴网]
+    grid_name_source: nearest_text
+
+  - component: annotation
+    revit_category: null
+    name_cn: 钢筋标注/平法标注（一期不建）
+    action: isolate
+    glob: ["*DIM*", "*标注*", "*钢筋*", "*REBAR*", "*文字*", "*TEXT*"]
+    keyword: [标注, 钢筋, 平法, 文字, 尺寸]
+
+  - component: hatch
+    revit_category: null
+    name_cn: 填充/混凝土符号
+    action: isolate
+    glob: ["*HATCH*", "*填充*", "*材料*", "*混凝土*"]
+    keyword: [填充, 材料, 混凝土]
+
+  - component: ignored
+    revit_category: null
+    name_cn: 忽略
+    action: ignore
+    glob: ["*图框*", "*TITLE*", "DEFPOINTS", "*视口*"]

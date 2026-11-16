@@ -1,0 +1,112 @@
+# =============================================================================
+# 内置 BIM 建模规则默认配置（Revit 2022）
+# 由 revit-mcp-plugin 读取；所有字段都有默认值，缺省即用内置默认。
+# 用户自定义：复制到 %USERPROFILE%\.revit-wy\rules\default.yaml 覆盖同名键。
+# =============================================================================
+profile: default_bim_rules
+target_revit_version: "2022"
+units:
+  input: mm            # AutoCAD 图纸单位（mm 为国内施工图惯例）
+  internal: mm
+  conversion: auto     # auto | force_mm | force_m | as_is
+
+# ------------ 标高 ------------
+levels:
+  strategy: from_grid_text      # from_grid_text | from_layer | manual
+  default_spacing_mm: 3000
+  name_pattern: "{story}层"
+  first_story_elevation_mm: 0
+  story_height_mm: 3000
+  tolerance_mm: 50
+
+# ------------ 墙 ------------
+wall:
+  family: "系统族: 基本墙"
+  type_from_thickness: true
+  default_type: "常规 - 200mm"
+  fallback_thickness_mm: 200
+  thickness_round_mm: 10
+  type_name_template: "常规 - {thickness}mm"
+  join_strategy: by_geometry
+  join_allow: 100
+  # 中心线提取
+  centerline:
+    enabled: true
+    gap_tolerance_mm: 300
+    max_extension_mm: 200
+  # 弧墙
+  arc: {segments: 24, enabled: true}
+  # 墙体高度
+  height: {mode: to_next_level, offset_mm: 0}
+
+# ------------ 柱 ------------
+column:
+  family: "系统族: 结构柱"
+  type_name_template: "{width}x{height}mm"
+  shape: rect
+  param_map:
+    b: "宽度"
+    h: "高度"
+  # 角柱/异形柱以闭合多段线判定
+  max_vertices_rect: 6
+
+# ------------ 梁 ------------
+beam:
+  family: "系统族: 混凝土矩形梁"
+  type_name_template: "{width}x{height}mm"
+  default_b: 200
+  default_h: 500
+  b_from: pair_distance    # pair_distance | layer_suffix | default
+  h_from: default          # default | text_tag
+  z_offset_mm: 0           # 梁顶相对楼层标高
+
+# ------------ 门 / 窗 ------------
+door:
+  family_strategy: auto_match   # auto_match | fixed
+  fallback_family: "单扇 - 与墙齐"
+  type_name_template: "{width}x{height}"
+  default_width_mm: 900
+  default_height_mm: 2100
+  host_wall: auto
+  flip: auto
+  width_from_block: true
+
+window:
+  family_strategy: auto_match
+  fallback_family: "固定窗"
+  type_name_template: "{width}x{height}"
+  default_width_mm: 1500
+  default_height_mm: 1500
+  sill_height_mm: 900
+  host_wall: auto
+
+# ------------ 楼板 ------------
+slab:
+  family: "系统族: 楼板"
+  type_name_template: "常规 - {thickness}mm"
+  default_thickness_mm: 120
+  boundary: closed_polyline
+  tolerance_mm: 1.0
+
+# ------------ 轴网 ------------
+grid:
+  name_source: text
+  name_cleanup: '(?i)[^\w\u4e00-\u9fa5-]'
+  dash_filter: true
+  extend_mm: 500
+
+# ------------ 建模通用 ------------
+modeling:
+  transaction_mode: per_element_commit   # 单构件提交，失败可回滚
+  max_attempts: 2
+  skip_on_failure: true
+  id_prefix_counter: true                # 构件编号 门M-001 等
+  counter:
+    door: "M-{n:03d}"
+    window: "C-{n:03d}"
+    column: "KZ-{n:03d}"
+    beam: "KL-{n:03d}"
+  # 几何容差
+  min_element_length_mm: 50
+  min_area_mm2: 10000
+  dedupe_epsilon_mm: 2.0

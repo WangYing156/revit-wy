@@ -1,0 +1,53 @@
+# =============================================================================
+# MEP（机电）映射 —— 一期不建模，仅做图层识别与分离，避免混入建筑/结构几何
+# 二期接入风管/水管/桥架生成时，只需把 action 从 isolate 改为 build 并补 rules
+# =============================================================================
+profile: mep
+name: 机电（一期仅识别隔离）
+version: 1
+match_order: [exact, glob, contains, regex, keyword]
+auto_accept: 0.85
+manual_review: 0.55
+fallback_component: manual_review
+
+rules:
+  - component: duct
+    revit_category: OST_DuctCurves
+    name_cn: 风管
+    action: isolate
+    priority: 100
+    glob: ["*DUCT*", "*风管*", "*HVAC*", "M-DUCT*", "*SA*", "*RA*"]
+    contains: ["DUCT", "风管", "HVAC"]
+    keyword: [风管, 送风, 回风, 新风, 排风]
+
+  - component: pipe
+    revit_category: OST_PipeCurves
+    name_cn: 水管
+    action: isolate
+    priority: 100
+    glob: ["*PIPE*", "*水管*", "*给排水*", "P-*", "*W-*"]
+    contains: ["PIPE", "管"]
+    keyword: [水管, 给水, 排水, 消防, 冷凝]
+
+  - component: cable_tray
+    revit_category: OST_CableTray
+    name_cn: 桥架
+    action: isolate
+    priority: 100
+    glob: ["*TRAY*", "*桥架*", "E-*", "*CABLE*"]
+    contains: ["TRAY", "桥架", "CABLE"]
+    keyword: [桥架, 线槽, 母线]
+
+  - component: equipment
+    revit_category: OST_MechanicalEquipment
+    name_cn: 设备
+    action: isolate
+    priority: 90
+    glob: ["*EQUIP*", "*设备*", "*机组*"]
+    keyword: [设备, 机组, 风机, 水泵, 配电箱]
+
+  - component: ignored
+    revit_category: null
+    name_cn: 忽略
+    action: ignore
+    glob: ["*图框*", "DEFPOINTS", "*DIM*", "*标注*"]

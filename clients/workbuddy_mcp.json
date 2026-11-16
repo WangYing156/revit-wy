@@ -1,0 +1,16 @@
+{
+  "_comment": "WorkBuddy 配置。写入 %USERPROFILE%\\.workbuddy\\mcp.json 后在『连接器』里点 Trust 才会生效",
+  "_structure_profile": "结构图请把 --profile 改为 struct；机电为 mep",
+  "mcpServers": {
+    "revit-wy": {
+      "type": "stdio",
+      "command": "C:\\Python311\\python.exe",
+      "args": ["-m", "revit_wy.mcp_server", "--profile", "arch"],
+      "env": {
+        "PYTHONPATH": "D:\\revit-wy\\src",
+        "REVIT_WY_HOME": "D:\\revit-wy\\.revit-wy"
+      },
+      "defer_loading": false
+    }
+  }
+}

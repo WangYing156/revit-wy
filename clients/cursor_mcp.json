@@ -1,0 +1,14 @@
+{
+  "_comment": "Cursor 配置。放到项目根 .cursor/mcp.json（推荐，随项目走）或全局 ~/.cursor/mcp.json",
+  "_windows_note": "Windows 下把 command 改成 python.exe 绝对路径，例如 C:\\\\Users\\\\你\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\311\\\\python.exe",
+  "mcpServers": {
+    "revit-wy": {
+      "command": "python",
+      "args": ["-m", "revit_wy.mcp_server", "--profile", "arch"],
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/src",
+        "REVIT_WY_HOME": "${userHome}/.revit-wy"
+      }
+    }
+  }
+}

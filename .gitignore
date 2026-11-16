@@ -1,0 +1,38 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ---- .NET ----
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# ---- 生成物（每次运行都会重建，不入库）----
+out/
+samples/*/build/
+samples/*/review/
+*_clean.dxf
+_scr/
+.revit-wy/
+
+# ---- 图纸（体积大、含客户信息，不入库）----
+*.dwg
+# 注：samples/*.dxf 是代码生成的测试样例，保留入库以便复现
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+!.vscode/extensions.json

@@ -1,0 +1,136 @@
+# =============================================================================
+# 图层 → 构件 规范映射（建筑平面）
+# 适用：图层命名不规范的历史图纸。match 策略按顺序尝试，命中即停。
+# 本文件可被 mapping_confirmed.yaml 覆盖（数模对照确认后生成），
+# 用户自定义只需复制本文件改名，并在 build 时用 --mapping 指定。
+# =============================================================================
+profile: arch
+name: 建筑平面（默认规范映射）
+version: 1
+
+# 匹配策略顺序：exact > glob > contains > regex > keyword > fuzzy
+match_order: [exact, glob, contains, regex, keyword, fuzzy]
+# 自动确认阈值：confidence >= auto_accept 才允许“全自动”通过，否则进人工确认
+auto_accept: 0.85
+manual_review: 0.55          # 介于两者之间 → 建议人工确认
+# 未命中任何规则时的默认去向
+fallback_component: manual_review
+
+rules:
+  # ---------------- 墙体 ----------------
+  - component: wall
+    revit_category: OST_Walls
+    name_cn: 墙
+    structural: false
+    priority: 100
+    exact: [WALL, WALLS, A-WALL, WALL-FULL]
+    glob: ["*WALL*", "A-WAL*", "*墙体*", "*-WALL"]
+    contains: ["WALL", "墙"]
+    regex: ["(?i)^a[_-]?wall", "(?i)wall.*(200|100|240|300)"]
+    keyword: [墙, 墙体, 隔墙, 外墙, 内墙, 剪力墙]
+    # 图层名末尾的厚度后缀，如 A-WALL-200 / 墙-200
+    thickness_suffix: '(?i)(?:wall|墙|q)[-_ ]*(\d{2,3})\s*(?:mm)?$'
+    # 双线配对参数（像素/图纸单位由文档单位决定，构建前统一换算为 mm）
+    pair:
+      min_thickness_mm: 60
+      max_thickness_mm: 500
+      parallel_tol_deg: 2.0
+      overlap_min_ratio: 0.35
+
+  - component: column
+    revit_category: OST_StructuralColumns
+    name_cn: 柱
+    structural: true
+    priority: 100
+    exact: [COLUMN, COLUMNS, S-COLU, COLU]
+    glob: ["*COL*", "*柱*", "S-COL*", "*COLU*"]
+    contains: ["COL", "柱", "PILLAR"]
+    regex: ["(?i)^s[_-]?col", "(?i)column"]
+    keyword: [柱, 柱子, 框架柱, 构造柱, 暗柱, 剪力墙柱]
+    shape: closed_polyline_bbox
+
+  # ---------------- 门窗（多以块形式存在） ----------------
+  - component: door
+    revit_category: OST_Doors
+    name_cn: 门
+    structural: false
+    priority: 100
+    glob: ["*DOOR*", "*门*", "A-DOOR*", "*DOR*", "*M-*"]
+    contains: ["DOOR", "门"]
+    regex: ["(?i)^(a[_-])?door", "(?i)^dor"]
+    keyword: [门, 单开门, 双开门, 推拉门, 防火门, 卷帘门]
+    block_glob: ["*门*", "*DOR*", "*DOOR*", "*M[0-9]*"]
+
+  - component: window
+    revit_category: OST_Windows
+    name_cn: 窗
+    structural: false
+    priority: 100
+    glob: ["*WIND*", "*窗*", "A-WIND*", "*WIN*"]
+    contains: ["WIND", "窗"]
+    regex: ["(?i)^(a[_-])?wind", "(?i)^win"]
+    keyword: [窗, 窗户, 幕墙窗, 飘窗, 百叶]
+    block_glob: ["*窗*", "*WIN*", "*C[0-9]*"]
+
+  # ---------------- 楼板 / 房间边界 ----------------
+  - component: slab
+    revit_category: OST_Floors
+    name_cn: 楼板
+    structural: true
+    priority: 90
+    glob: ["*FLOOR*", "*SLAB*", "*楼板*", "*板*"]
+    contains: ["FLOOR", "SLAB", "楼板"]
+    regex: ["(?i)^s[_-]?(floor|slab)"]
+    keyword: [楼板, 板, 顶板, 底板, 降板]
+
+  - component: room_boundary
+    revit_category: OST_RoomTags
+    name_cn: 房间边界
+    structural: false
+    priority: 60
+    glob: ["*ROOM*", "*房间*", "*AREA*"]
+    contains: ["ROOM", "房间"]
+    keyword: [房间, 房间名, 面积, 户型]
+
+  # ---------------- 轴网 ----------------
+  - component: grid
+    revit_category: OST_Grids
+    name_cn: 轴网
+    structural: false
+    priority: 120
+    glob: ["*AXIS*", "*GRID*", "*轴线*", "*轴网*", "S-GRID*", "A-AXIS*"]
+    contains: ["AXIS", "GRID", "轴线", "轴网", "DOTE"]
+    keyword: [轴线, 轴网, 定位轴线, 辅助线]
+    grid_name_source: nearest_text
+
+  # ---------------- 非建模图层：清洗时隔离 ----------------
+  - component: annotation
+    revit_category: null
+    name_cn: 标注/尺寸
+    priority: 30
+    glob: ["*DIM*", "*标注*", "*尺寸*", "*TEXT*", "*文字*"]
+    contains: ["DIM", "标注", "尺寸"]
+    keyword: [标注, 尺寸, 文字, 索引]
+    action: isolate          # 隔离到非建模图层，不参与几何提取
+
+  - component: hatch
+    revit_category: null
+    name_cn: 填充/材料
+    action: isolate
+    glob: ["*HATCH*", "*填充*", "*材料*", "*PAT*"]
+    keyword: [填充, 材料, 图例]
+
+  - component: furniture
+    revit_category: null
+    name_cn: 家具/洁具（可不建）
+    action: isolate
+    glob: ["*FURN*", "*家具*", "*洁具*", "*EQUIP*"]
+    keyword: [家具, 洁具, 设备, 卫浴]
+
+  - component: ignored
+    revit_category: null
+    name_cn: 图框/其他忽略
+    action: ignore
+    glob: ["*图框*", "*TITLE*", "DEFPOINTS", "*打印*", "*视口*"]
+    contains: ["DEFPOINTS"]
+    keyword: [图框, 图签, 会签, 视口]

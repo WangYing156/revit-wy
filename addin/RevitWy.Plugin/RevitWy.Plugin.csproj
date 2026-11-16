@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  RevitWy.Plugin 构建配置
+  目标：.NET Framework 4.8 + Revit 2022（API 版本 2022.0）
+  说明：
+    * Revit 2022 附属程序集路径写死为本机安装路径，如需换机器请改 RevitApiDir。
+    * 不 Copy Local RevitAPI*.dll（由 Revit.exe 提供，复制会导致版本冲突）。
+    * Address 类型已由 NuGet Revit API 提供，无需手工引用 AcCui.dll。
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>RevitWy.Plugin</AssemblyName>
+    <RootNamespace>RevitWy.Plugin</RootNamespace>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Company>revit-wy</Company>
+    <Product>revit-wy 一键翻模</Product>
+    <Version>0.1.0</Version>
+    <NoWarn>MSB3277</NoWarn>
+    <!-- 供 NuGet 的 Revit API 包使用的版本号 -->
+    <RevitVersion>2022</RevitVersion>
+  </PropertyGroup>
+
+  <!-- Revit 2022 API 引用方式二选一 -->
+  <PropertyGroup Condition="'$(UseNugetRevitApi)' == 'true'">
+    <!-- 方式 A：NuGet（推荐 CI 使用，免装 Revit 也能编译） -->
+    <DefineConstants>$(DefineConstants);USE_NUGET_API</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(UseNugetRevitApi)' != 'true'">
+    <!-- 方式 B：本机 Revit 安装目录引用（推荐设计院离线环境） -->
+    <RevitApiDir Condition="'$(RevitApiDir)' == ''">C:\Program Files\Autodesk\Revit 2022</RevitApiDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseNugetRevitApi)' == 'true'">
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2022.*" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2022.*" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseNugetRevitApi)' != 'true'">
+    <Reference Include="RevitAPI">
+      <HintPath>$(RevitApiDir)\RevitAPI.dll</HintPath>
+      <Private>False</Private>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+    </Reference>
+    <Reference Include="RevitAPIUI">
+      <HintPath>$(RevitApiDir)\RevitAPIUI.dll</HintPath>
+      <Private>False</Private>
+      <EmbedInteropTypes>False</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Revit 2022 自带 Newtonsoft.Json 13.x，保持一致避免版本冲突 -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="RevitWy.Plugin.addin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="config.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- 编译后自动部署到 %APPDATA%\Autodesk\Revit\Addins\2022 -->
+  <Target Name="DeployToRevit" AfterTargets="Build" Condition="'$(DeployToRevit)' == 'true'">
+    <PropertyGroup>
+      <RevitAddinDir>$(APPDATA)\Autodesk\Revit\Addins\2022</RevitAddinDir>
+      <DeployDir>$(RevitAddinDir)\revit-wy</DeployDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(DeployDir)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DeployDir)" />
+    <Copy SourceFiles="$(TargetDir)Newtonsoft.Json.dll" DestinationFolder="$(DeployDir)"
+          Condition="Exists('$(TargetDir)Newtonsoft.Json.dll')" />
+    <Copy SourceFiles="$(ProjectDir)config.json" DestinationFolder="$(DeployDir)"
+          Condition="Exists('$(ProjectDir)config.json')" />
+    <Copy SourceFiles="$(ProjectDir)RevitWy.Plugin.addin" DestinationFolder="$(RevitAddinDir)" />
+    <Message Text="revit-wy 已部署到 $(RevitAddinDir)" Importance="high" />
+  </Target>
+
+</Project>
