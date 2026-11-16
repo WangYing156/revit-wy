@@ -1,0 +1,5 @@
+# Windows 批处理必须是 CRLF：LF-only 的 .bat 在 cmd.exe 里 goto/label 会失效
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+# PowerShell 脚本带 UTF-8 BOM（文件本身已带），禁止任何工具改成 LF
+*.ps1   text eol=crlf working-tree-encoding=UTF-8

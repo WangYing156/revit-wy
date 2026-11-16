@@ -51,9 +51,17 @@ goto :done
 
 :norevit
 echo.
-echo   Could not reach the Revit add-in.
+echo   Could not reach the Revit add-in on port 48880.
+echo.
 echo   1) Is Revit running with a model open?
-echo   2) Was the add-in deployed? Run the setup .bat once (build-addin.ps1).
+echo   2) Is there a "revit-wy" tab in the Revit ribbon?
+echo      - no tab  =^> the add-in is not loaded. Build and deploy it:
+echo          powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\build-addin.ps1" -Deploy
+echo          then restart Revit.
+echo      - yes tab =^> open the dockable pane and check the port it shows.
+echo   3) Two Revit instances cannot both hold 48880 - close the extra one.
+echo.
+echo   Full environment check:  "%PY%" -m revit_wy.setup_check --root "%ROOT%"
 echo.
 echo   Want to see what a report looks like without Revit?
 echo     "%PY%" -m revit_wy.cli audit model --demo

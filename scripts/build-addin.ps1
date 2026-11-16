@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   revit-wy 插件构建与部署脚本（Windows / PowerShell 5.1+）
 

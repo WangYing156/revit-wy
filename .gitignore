@@ -36,3 +36,6 @@ Thumbs.db
 .idea/
 .vscode/
 !.vscode/extensions.json
+
+# ---- MCP 客户端配置（install_mcp / 一键启动 生成，含本机绝对路径，不入库）----
+.cursor/
