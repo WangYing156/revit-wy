@@ -63,11 +63,13 @@ namespace RevitWy.Plugin
                     return _bridge.Invoke(ui => (object)ListTypes(ui, p), TimeSpan.FromSeconds(40));
                 case "delete_tagged":
                     return _bridge.Invoke(ui => (object)DeleteTagged(ui), DefaultTimeout);
+                case "select_by_tags":
+                    return _bridge.Invoke(ui => (object)SelectByTags(ui, p), TimeSpan.FromSeconds(60));
                 default:
                     throw new RwyException(ErrorCodes.Unsupported,
                         "未知方法: " + method + "（可用: ping/status/prepare_project/build_ir/"
                         + "create_levels/create_grids/create_walls/create_columns/create_beams/"
-                        + "create_openings/create_slabs/list_types/delete_tagged）");
+                        + "create_openings/create_slabs/list_types/delete_tagged/select_by_tags）");
             }
         }
 
@@ -418,6 +420,86 @@ namespace RevitWy.Plugin
                     type = s.Name,
                     active = s.IsActive
                 }).OrderBy(x => x.family).ToList();
+        }
+
+        /// <summary>
+        /// 按 IR 构件 id 选中并缩放到这些构件。
+        /// 用途：浏览器工作台里点一行/一个构件，Revit 视图立刻跳到它——这是
+        /// 「浏览器看对照、Revit 看真模型」两个载体之间最省事的联动方式。
+        ///
+        /// 匹配依据是构件 Comments 里的 "revit-wy:<layer>|<id>"，所以只能用
+        /// 最近一次成功写入的 IR id；改图后旧 id 会失效，这是预期行为。
+        /// </summary>
+        private object SelectByTags(UIApplication ui, JObject p)
+        {
+            var uidoc = ui.ActiveUIDocument;
+            if (uidoc == null) throw new RwyException(ErrorCodes.NoDocument, "没有打开的文档");
+            var doc = uidoc.Document;
+
+            var wanted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var arr = p["ids"] as JArray;
+            if (arr != null)
+                foreach (var t in arr) { var s = t.ToString(); if (s.Length > 0) wanted.Add(s); }
+
+            if (wanted.Count == 0)
+                throw new RwyException(ErrorCodes.BadParams, "ids 为空");
+
+            var kinds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var ka = p["kinds"] as JArray;
+            if (ka != null)
+                foreach (var t in ka) { var s = t.ToString(); if (s.Length > 0) kinds.Add(s); }
+
+            var ids = new List<ElementId>();
+            int scanned = 0;
+            foreach (var e in new FilteredElementCollector(doc).WhereElementIsNotElementType())
+            {
+                scanned++;
+                var pc = e.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS);
+                if (pc == null) continue;
+                var val = pc.AsString();
+                if (string.IsNullOrEmpty(val) || !val.StartsWith("revit-wy:")) continue;
+
+                int bar = val.LastIndexOf('|');
+                if (bar < 0 || bar + 1 >= val.Length) continue;
+                var id = val.Substring(bar + 1);
+                if (!wanted.Contains(id)) continue;
+
+                if (kinds.Count > 0)
+                {
+                    var kind = KindOf(e);
+                    if (kind != null && !kinds.Contains(kind)) continue;
+                }
+                ids.Add(e.Id);
+            }
+
+            if (ids.Count == 0)
+            {
+                return new
+                {
+                    selected = 0,
+                    scanned,
+                    message = "没有匹配到构件。ids 来自上次成功写入的 IR；"
+                            + "若改过图纸并重新构建过 IR，请先重新 rwy_build 再试。"
+                };
+            }
+
+            uidoc.Selection.SetElementIds(ids);
+            try { uidoc.ShowElements(ids); } catch { /* 某些视图不支持缩放，忽略 */ }
+
+            return new { selected = ids.Count, scanned };
+        }
+
+        private static string KindOf(Element e)
+        {
+            var cat = e.Category != null ? e.Category.Id.IntegerValue : 0;
+            if (cat == (int)BuiltInCategory.OST_Walls) return "walls";
+            if (cat == (int)BuiltInCategory.OST_StructuralColumns) return "columns";
+            if (cat == (int)BuiltInCategory.OST_StructuralFraming) return "beams";
+            if (cat == (int)BuiltInCategory.OST_Floors) return "slabs";
+            if (cat == (int)BuiltInCategory.OST_Doors) return "doors";
+            if (cat == (int)BuiltInCategory.OST_Windows) return "windows";
+            if (cat == (int)BuiltInCategory.OST_Grids) return "grids";
+            return null;
         }
 
         /// <summary>

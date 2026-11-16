@@ -196,3 +196,50 @@ class TestReport:
         md = Path(paths["markdown"]).read_text(encoding="utf-8")
         assert "数模对照" in md
         assert read_overrides(paths["csv"]) == {}
+
+
+class TestAliasShortCircuit:
+    """回归测试：别名必须无条件优先，且 isolate/ignore 这类“动作型”归属也要生效。
+
+    历史缺陷：早期只在“规则也命中”时才认别名，导致用户确认“这层是隔离”后
+    毫无效果（因为 isolate 没有对应的 component 规则）。这个 bug 会让整个
+    数模对照确认环节形同虚设，必须锁死。
+    """
+
+    def _m(self):
+        return LayerMapper(cfg.load_mapping("arch"))
+
+    def test_alias_overrides_to_isolate(self):
+        m = self._m()
+        assert m.match("A-WALL-200").action == "build"      # 默认是墙
+        m.learn("A-WALL-200", "isolate")
+        r = m.match("A-WALL-200")
+        assert r.action == "isolate"
+        assert r.matched_by == "alias" and r.confidence == 1.0
+
+    def test_alias_overrides_to_ignore(self):
+        m = self._m()
+        m.learn("A-WALL", "ignore")
+        assert m.match("A-WALL").action == "ignore"
+
+    def test_alias_restores_to_build(self):
+        m = self._m()
+        m.learn("A-WALL-200", "isolate")
+        m.learn("A-WALL-200", "wall")
+        r = m.match("A-WALL-200")
+        assert r.action == "build" and r.component == "wall"
+
+    def test_alias_on_unknown_layer(self):
+        """完全无法识别的图层，确认后也应生效。"""
+        m = self._m()
+        assert m.match("我的怪层XYZ").action == "manual_review"
+        m.learn("我的怪层XYZ", "column")
+        r = m.match("我的怪层XYZ")
+        assert r.component == "column" and r.action == "build"
+        assert r.revit_category == "OST_StructuralColumns"
+
+    def test_alias_survives_normalization(self):
+        """全角/大小写不同的写法应命中同一别名。"""
+        m = self._m()
+        m.learn("A-WALL-200", "isolate")
+        assert m.match("ａ-wall-200").action == "isolate"

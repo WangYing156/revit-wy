@@ -466,15 +466,12 @@ def assign_host_walls(model: IRModel, max_distance_mm: float = 400.0) -> int:
     return n
 
 
-def diff(a: Dict, b: Dict, keys=("walls", "columns", "beams", "doors", "windows", "slabs")):
-    """IR 增量对比，用于改图后只重建变更构件。"""
-    out: Dict[str, Any] = {}
-    for k in keys:
-        sa = {tuple(sorted(e.get("id", ""))) for e in a.get(k, [])}
-        ida = {e.get("id") for e in a.get(k, [])}
-        idb = {e.get("id") for e in b.get(k, [])}
-        out[k] = {
-            "added": len(idb - ida), "removed": len(ida - idb),
-            "same": len(ida & idb),
-        }
-    return out
+def diff(a: Dict, b: Dict, keys=None, tol_mm: float = 2.0) -> Dict[str, Any]:
+    """IR 增量对比。
+
+    注意：**不能按 id 比对**。IR 的 id 是每次运行随机生成的，
+    按 id 比一定得到"全新增"，会误导用户。这里按几何签名比对（见 diffing.py）。
+    """
+    from .diffing import compare
+    del keys  # 保留旧签名兼容，实际按 diffing.SIGNERS 的全部构件类型比对
+    return compare(a, b, tol_mm=tol_mm).summary()

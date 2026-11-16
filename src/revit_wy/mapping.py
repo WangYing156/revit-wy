@@ -95,10 +95,6 @@ class LayerMapper:
         """返回 (score, matched_by, detail) 或 None。"""
         comp = rule.get("component", "")
 
-        # 别名优先
-        if norm in self.aliases and self.aliases[norm] == comp:
-            return WEIGHTS["alias"], "alias", "已确认别名"
-
         for pat in rule.get("exact", []) or []:
             if norm == normalize(pat):
                 return WEIGHTS["exact"], "exact", f"精确匹配 {pat}"
@@ -145,6 +141,43 @@ class LayerMapper:
     # ---------------- 对外接口 ----------------
     def match(self, layer: str) -> MatchResult:
         norm, core = normalize(layer), core_name(layer)
+
+        # ---- 0) 别名短路 ----
+        # 别名是人工确认过的事实，比任何规则推断都可信，必须无条件优先。
+        # 早期实现只在"规则也命中"时才算别名，导致 isolate/ignore 这类
+        # 非构件归属永远无法生效（它们没有对应的 component 规则）。
+        alias_comp = self.aliases.get(norm)
+        if alias_comp:
+            rule = self._component_index.get(alias_comp)
+            if alias_comp in ("isolate", "ignore"):
+                return MatchResult(
+                    layer=layer, component=alias_comp,
+                    name_cn={"isolate": "隔离", "ignore": "忽略"}.get(alias_comp, alias_comp),
+                    revit_category=None, action=alias_comp,
+                    confidence=1.0, matched_by="alias",
+                    reason="已确认别名（人工指定）",
+                )
+            return MatchResult(
+                layer=layer,
+                component=alias_comp,
+                name_cn=(rule or {}).get("name_cn", "") or alias_comp,
+                revit_category=(rule or {}).get("revit_category"),
+                action="build",
+                confidence=1.0,
+                matched_by="alias",
+                reason="已确认别名（人工指定）",
+                extras={k: (rule or {})[k] for k in
+                        ("thickness_suffix", "pair", "block_glob",
+                         "grid_name_source", "structural", "shape")
+                        if rule and k in rule},
+            )
+        if alias_comp == "manual_review":
+            return MatchResult(
+                layer=layer, component="manual_review", name_cn="待确认",
+                revit_category=None, action="manual_review",
+                confidence=0.0, matched_by="alias", reason="已确认需要人工判断",
+            )
+
         best: Optional[MatchResult] = None
 
         for idx, rule in self.rules:

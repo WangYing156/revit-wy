@@ -162,6 +162,22 @@ def handle_build_ir(p):
     return result
 
 
+def handle_select_by_tags(p):
+    """模拟按 IR 构件 id 选中。真实插件按 Comments 标记匹配。"""
+    ids = p.get("ids") or []
+    kinds = p.get("kinds") or []
+    if not ids:
+        raise ValueError("ids 为空")
+    known = {k: v for k, v in STATE.counts.items() if v > 0}
+    if not kinds:
+        kinds = list(known)
+    matched = [i for i in ids if not kinds or True]
+    if STATE.counts.get("walls", 0) == 0 and STATE.counts.get("columns", 0) == 0:
+        return {"selected": 0, "scanned": 0,
+                "message": "当前模拟项目中还没有翻模构件（先调 build_ir）"}
+    return {"selected": len(matched), "scanned": sum(STATE.counts.values()) + 20}
+
+
 def handle_delete_tagged(p):
     n = sum(STATE.counts.values())
     for k in STATE.counts:
@@ -192,6 +208,7 @@ METHODS = {
     "prepare_project": handle_prepare_project,
     "build_ir": handle_build_ir,
     "delete_tagged": handle_delete_tagged,
+    "select_by_tags": handle_select_by_tags,
     "list_types": handle_list_types,
     "create_levels": lambda p: {"created": len(p.get("levels") or [])},
     "create_grids": lambda p: {"created": len(p.get("grids") or [])},

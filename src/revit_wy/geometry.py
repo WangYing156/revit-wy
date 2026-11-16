@@ -391,8 +391,18 @@ class GridLine:
     end: Point
     vertical: bool
 
+    @property
+    def id(self) -> str:
+        """轴网用「名称」当 id：重算后名称不变，才能回传 Revit 定位。
+
+        其他构件用随机 id 是因为它们的几何每次可能微调；轴网名称是人给的，
+        天然稳定，用名称做 id 最贴合实际。
+        """
+        return f"grid-{self.name}"
+
     def to_dict(self) -> Dict:
         return {
+            "id": self.id,
             "name": self.name,
             "start": [round(self.start[0], 1), round(self.start[1], 1)],
             "end": [round(self.end[0], 1), round(self.end[1], 1)],
