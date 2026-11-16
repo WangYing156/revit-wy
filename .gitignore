@@ -39,3 +39,6 @@ Thumbs.db
 
 # ---- MCP 客户端配置（install_mcp / 一键启动 生成，含本机绝对路径，不入库）----
 .cursor/
+
+# ---- 一键启动日志（含本机路径与命令输出，不入库）----
+reports/setup-*.log
